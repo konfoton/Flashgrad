@@ -1,0 +1,10 @@
+build/
+build-*/
+cmake-build-*/
+compile_commands.json
+.cache/
+*.ncu-rep
+*.nsys-rep
+*.qdrep
+.vscode/
+.idea/

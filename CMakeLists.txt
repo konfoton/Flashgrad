@@ -55,7 +55,10 @@ endif()
 # Library
 # ---------------------------------------------------------------------------
 add_library(flashgrad
+  src/core/device.cpp
+  src/core/dtype.cpp
   src/core/error.cpp
+  src/core/shape.cpp
   src/cuda/runtime.cpp
   src/cuda/smoke.cu
 )

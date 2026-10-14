@@ -1,5 +1,6 @@
 #pragma once
 
+#include "core/op_kinds.h"
 #include "flashgrad/core/tensor.h"
 
 // CPU reference kernels. They are deliberately naive (strided loops, double accumulators)
@@ -13,5 +14,24 @@ namespace flashgrad::cpu {
 // dst and src have the same shape; converts between any dtypes.
 void copy(const Tensor& dst, const Tensor& src);
 void fill(const Tensor& out, double value);
+
+// out, a, b have the same shape and dtype.
+void binary(BinaryOp op, const Tensor& out, const Tensor& a, const Tensor& b);
+// out (bool), a, b have the same shape; a and b have the same dtype.
+void compare(CompareOp op, const Tensor& out, const Tensor& a, const Tensor& b);
+// out and a have the same shape and dtype.
+void unary(UnaryOp op, const Tensor& out, const Tensor& a);
+
+// in.shape() == out.shape() ++ reduced dims: reduces over the trailing in.dim() - out.dim()
+// dimensions. out has in's dtype.
+void reduce(ReduceOp op, const Tensor& out, const Tensor& in);
+// Same layout as reduce; out is int64 and holds the row-major index into the reduced dims.
+void arg_reduce(ArgReduceOp op, const Tensor& out, const Tensor& in);
+
+// a: [B..., m, k], b: [B..., k, n], out: [B..., m, n] with identical batch dims B.
+void matmul(const Tensor& out, const Tensor& a, const Tensor& b);
+
+// Softmax (or log-softmax) over the last dimension; out and in have the same shape.
+void softmax(const Tensor& out, const Tensor& in, bool log_space);
 
 }  // namespace flashgrad::cpu

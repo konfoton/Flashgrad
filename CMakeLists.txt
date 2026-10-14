@@ -60,6 +60,7 @@ add_library(flashgrad
   src/core/dtype.cpp
   src/core/error.cpp
   src/core/factory.cpp
+  src/core/ops.cpp
   src/core/print.cpp
   src/core/random.cpp
   src/core/shape.cpp

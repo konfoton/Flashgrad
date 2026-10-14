@@ -55,17 +55,21 @@ endif()
 # Library
 # ---------------------------------------------------------------------------
 add_library(flashgrad
+  src/core/allocator.cpp
   src/core/device.cpp
   src/core/dtype.cpp
   src/core/error.cpp
   src/core/shape.cpp
+  src/core/storage.cpp
+  src/cuda/memory.cpp
   src/cuda/runtime.cpp
   src/cuda/smoke.cu
 )
 add_library(flashgrad::flashgrad ALIAS flashgrad)
 
-target_include_directories(flashgrad PUBLIC
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+target_include_directories(flashgrad
+  PUBLIC  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src  # internal headers: core/, cpu/, cuda/
 )
 target_link_libraries(flashgrad
   PUBLIC  CUDA::cudart

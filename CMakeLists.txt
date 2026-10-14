@@ -59,8 +59,14 @@ add_library(flashgrad
   src/core/device.cpp
   src/core/dtype.cpp
   src/core/error.cpp
+  src/core/factory.cpp
+  src/core/print.cpp
+  src/core/random.cpp
   src/core/shape.cpp
   src/core/storage.cpp
+  src/core/tensor.cpp
+  src/core/tensor_impl.cpp
+  src/cpu/ops.cpp
   src/cuda/memory.cpp
   src/cuda/runtime.cpp
   src/cuda/smoke.cu

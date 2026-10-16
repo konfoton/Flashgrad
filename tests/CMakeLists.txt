@@ -13,8 +13,11 @@ add_executable(flashgrad_tests
   core/test_dtype_device.cpp
   core/test_error.cpp
   core/test_shape.cpp
+  core/test_tensor.cpp
+  core/test_views.cpp
   cuda/test_runtime.cpp
   cuda/test_smoke.cpp
+  cuda/test_tensor_cuda.cpp
 )
 target_link_libraries(flashgrad_tests PRIVATE
   flashgrad::flashgrad

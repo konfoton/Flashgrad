@@ -19,6 +19,7 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build -j
 ctest --test-dir build --output-on-failure
 ./build/examples/device_info
+./build/examples/tensor_basics
 ```
 
 Debug build (device debug info + synchronize after every kernel launch, so CUDA
@@ -39,6 +40,23 @@ cmake --build build-debug -j
 | `FLASHGRAD_SYNC_KERNELS` | `OFF` | `cudaDeviceSynchronize` after each kernel |
 | `FLASHGRAD_WERROR` | `ON` | Treat host compiler warnings as errors |
 
+## Usage
+
+```cpp
+#include "flashgrad/flashgrad.h"
+namespace fg = flashgrad;
+
+fg::Tensor a = fg::randn({64, 128});                  // float32, created on the CPU
+fg::Tensor row = a[0];                                // views share storage
+fg::Tensor cols = a.slice(1, 0, 128, 2);              // every other column, no copy
+fg::Tensor d = a.t().contiguous().cuda();             // copy to the GPU
+std::vector<float> host = d.to_vector();              // copies back to the host
+```
+
+Tensors are strided views (shape, strides, offset) into reference-counted storage, like
+PyTorch, and are all float32 for now. CPU tensors hold host data (creation, printing,
+transfers); all math ops run as CUDA kernels, which arrive in Phase 2.
+
 ## Debugging and profiling
 
 ```bash
@@ -51,11 +69,11 @@ ncu --set full -o kernels ./build/examples/<program>
 
 ```
 include/flashgrad/   public headers
-  core/              error handling, (tensor, dtype, device — Phase 1)
+  core/              error handling, dtype, device, storage, tensor
   cuda/              CUDA runtime helpers, error checks, timers
 src/
   core/              core implementation
-  cpu/               CPU reference kernels
+  cpu/               host-side copy/fill for CPU tensors
   cuda/              CUDA kernels (.cu)
 tests/               GoogleTest unit tests
 examples/            small programs using the library
@@ -65,7 +83,7 @@ benchmarks/          kernel benchmarks
 ## Roadmap
 
 - [x] Phase 0 — build system, error handling, CUDA helpers, tests
-- [ ] Phase 1 — Tensor core (storage, strides, views, CPU reference ops)
+- [x] Phase 1 — Tensor core (storage, strides, views, host/device copies)
 - [ ] Phase 2 — CUDA kernels (elementwise, reductions, matmul, softmax)
 - [ ] Phase 3 — caching allocator
 - [ ] Phase 4 — autograd

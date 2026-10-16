@@ -10,8 +10,8 @@ training a tiny GPT.
 - **C++ is the only user-facing API.** No Python front-end. Python bindings (nanobind) are an
   optional last phase. Python may be used only in `tools/` for scripts that check results against
   PyTorch, never as a library dependency.
-- **CUDA is the primary backend.** A simple CPU backend exists as the *reference
-  implementation* for tests and debugging — keep it naive and obviously correct, not fast.
+- **CUDA is the only compute backend.** There are no CPU compute ops: CPU tensors only hold
+  host data (creation, printing, host <-> device copies). Every math op is a CUDA kernel.
 - **Own kernels are the point of the thesis.** cuBLAS/cuDNN may be used only as optional
   reference/fallback backends and for benchmark comparisons.
 - Target hardware: RTX 3090 (`sm_86`), CUDA 13.0, GCC 13, CMake 3.28.
@@ -38,7 +38,7 @@ kernels, also run `compute-sanitizer` on the relevant tests.
 ```
 include/flashgrad/   public headers (core/, cuda/, later nn/, optim/)
 src/core/            device-independent implementation
-src/cpu/             CPU reference kernels
+src/cpu/             host-side copy/fill for CPU tensors (no compute ops)
 src/cuda/            CUDA kernels (.cu) and runtime helpers
 tests/               GoogleTest, mirrors src/ (tests/core, tests/cuda, ...)
 examples/            small executables; double as integration tests and docs
@@ -72,15 +72,19 @@ Don't start a phase before the previous phase's milestone works and is tested.
 - **Asynchrony:** library ops must not call `cudaDeviceSynchronize`; synchronize only when
   results go back to the host (`item()`, copy to CPU).
 - **Design for later phases now:** tensors are strided views from the start (shape, strides,
-  offset); ops dispatch on `(device, dtype)`; APIs should accept a stream even if only the
-  default stream is used initially.
+  offset); all tensors are float32 (`DType` has one value until fp16/bf16 in Phase 8 — don't
+  add other dtypes without asking); APIs should accept a stream even if only the default
+  stream is used initially.
 
 ## Testing rules
 
-- Every op gets tests that compare the CUDA result with the CPU reference on random inputs,
-  including edge cases: empty tensors, size 1, sizes that aren't multiples of the block size,
-  non-contiguous inputs and broadcasting.
+- Every op gets tests that compare the CUDA result with a naive reference written in the
+  tests (`tests/reference.h`: plain loops over `std::vector`, `double` accumulators — test
+  code only, never part of the library) on random inputs, including edge cases: empty
+  tensors, size 1, sizes that aren't multiples of the block size, non-contiguous inputs and
+  broadcasting. Add each op's reference together with its kernel.
 - Use exact comparison only where it's guaranteed (single fp32 ops); otherwise use
   relative + absolute tolerance.
-- Autograd ops (Phase 4+) also need a finite-difference gradient check (in `float64` on the CPU).
+- Autograd ops (Phase 4+) also need a finite-difference gradient check (in `float64`, using
+  the test reference on the host).
 - GPU tests must call `GTEST_SKIP()` when `flashgrad::cuda::is_available()` is false.

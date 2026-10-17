@@ -60,6 +60,7 @@ add_library(flashgrad
   src/core/dtype.cpp
   src/core/error.cpp
   src/core/factory.cpp
+  src/core/ops.cpp
   src/core/print.cpp
   src/core/random.cpp
   src/core/shape.cpp
@@ -67,7 +68,9 @@ add_library(flashgrad
   src/core/tensor.cpp
   src/core/tensor_impl.cpp
   src/cpu/ops.cpp
+  src/cuda/elementwise.cu
   src/cuda/memory.cpp
+  src/cuda/reduce.cu
   src/cuda/runtime.cpp
   src/cuda/smoke.cu
 )

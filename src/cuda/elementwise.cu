@@ -44,8 +44,14 @@ struct ReciprocalFn {
 struct AddFn {
   __device__ float operator()(float a, float b) const { return a + b; }
 };
+struct SubFn {
+  __device__ float operator()(float a, float b) const { return a - b; }
+};
 struct MulFn {
   __device__ float operator()(float a, float b) const { return a * b; }
+};
+struct DivFn {
+  __device__ float operator()(float a, float b) const { return a / b; }
 };
 struct MaximumFn {
   // NaN in either operand gives NaN (a NaN `b` fails `a > b` and is returned).
@@ -141,7 +147,9 @@ void binary(BinaryOp op, const Tensor& out, const Tensor& a, const Tensor& b, St
   DeviceGuard guard(out.device().index());
   switch (op) {
     case BinaryOp::Add: return launch_zip(AddFn{}, out, a, b, stream);
+    case BinaryOp::Sub: return launch_zip(SubFn{}, out, a, b, stream);
     case BinaryOp::Mul: return launch_zip(MulFn{}, out, a, b, stream);
+    case BinaryOp::Div: return launch_zip(DivFn{}, out, a, b, stream);
     case BinaryOp::Maximum: return launch_zip(MaximumFn{}, out, a, b, stream);
     case BinaryOp::Lt: return launch_zip(LtFn{}, out, a, b, stream);
     case BinaryOp::Eq: return launch_zip(EqFn{}, out, a, b, stream);

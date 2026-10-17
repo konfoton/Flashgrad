@@ -20,7 +20,7 @@ inline constexpr std::int64_t kMaxDims = 8;
 inline constexpr std::int64_t kMaxBlocks = 0x7fffffff;
 
 enum class UnaryOp { Neg, Relu, Exp, Log, Sigmoid, Reciprocal };
-enum class BinaryOp { Add, Mul, Maximum, Lt, Eq };
+enum class BinaryOp { Add, Sub, Mul, Div, Maximum, Lt, Eq };
 enum class ReduceOp { Sum, Prod, Max };
 
 // out = op(a); `a` has the shape of `out`.

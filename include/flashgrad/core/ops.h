@@ -19,7 +19,9 @@ Tensor reciprocal(const Tensor& a);
 
 // ---- Elementwise binary (operands broadcast, NumPy rules) -----------------------------
 Tensor add(const Tensor& a, const Tensor& b);
+Tensor sub(const Tensor& a, const Tensor& b);
 Tensor mul(const Tensor& a, const Tensor& b);
+Tensor div(const Tensor& a, const Tensor& b);
 Tensor maximum(const Tensor& a, const Tensor& b);
 // Comparisons: 1.0 where true, 0.0 where false.
 Tensor lt(const Tensor& a, const Tensor& b);
@@ -31,5 +33,22 @@ Tensor eq(const Tensor& a, const Tensor& b);
 Tensor sum(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim = false);
+
+// ---- Operators ------------------------------------------------------------------------
+// Shorthands for the arithmetic ops. A scalar operand becomes a 0-dim tensor on the other
+// operand's device and broadcasts.
+Tensor operator-(const Tensor& a);
+Tensor operator+(const Tensor& a, const Tensor& b);
+Tensor operator-(const Tensor& a, const Tensor& b);
+Tensor operator*(const Tensor& a, const Tensor& b);
+Tensor operator/(const Tensor& a, const Tensor& b);
+Tensor operator+(const Tensor& a, float s);
+Tensor operator-(const Tensor& a, float s);
+Tensor operator*(const Tensor& a, float s);
+Tensor operator/(const Tensor& a, float s);
+Tensor operator+(float s, const Tensor& a);
+Tensor operator-(float s, const Tensor& a);
+Tensor operator*(float s, const Tensor& a);
+Tensor operator/(float s, const Tensor& a);
 
 }  // namespace flashgrad

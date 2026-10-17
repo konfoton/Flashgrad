@@ -8,9 +8,8 @@ namespace fg = flashgrad;
 
 // numerically stable softmax(x) along `dim`.
 fg::Tensor softmax(const fg::Tensor& x, std::int64_t dim) {
-  const fg::Tensor shifted = fg::add(x, fg::neg(fg::max(x, dim, /*keepdim=*/true)));
-  const fg::Tensor e = fg::exp(shifted);
-  return fg::mul(e, fg::reciprocal(fg::sum(e, dim, /*keepdim=*/true)));
+  const fg::Tensor e = fg::exp(x - fg::max(x, dim, /*keepdim=*/true));
+  return e / fg::sum(e, dim, /*keepdim=*/true);
 }
 
 int main() {
@@ -35,8 +34,16 @@ int main() {
   std::cout << "max(x, 1) = " << fg::max(x, 1) << "\n";
   std::cout << "prod(x, 1, keepdim) =\n" << fg::prod(x, 1, /*keepdim=*/true) << "\n";
 
+  // Operators: + - * / and unary -, on tensors or a tensor and a scalar (either side).
+  std::cout << "x - bias =\n" << x - bias << "\n";
+  std::cout << "(x + 1) * (x - 1) =\n" << (x + 1.0f) * (x - 1.0f) << "\n";
+  std::cout << "-x / 2 =\n" << -x / 2.0f << "\n";
+  std::cout << "1 / (1 + exp(-x)) (sigmoid by hand) =\n" << 1.0f / (1.0f + fg::exp(-x)) << "\n";
+  const fg::Tensor mean = fg::sum(x, 1, /*keepdim=*/true) / 3.0f;  // [2, 1]
+  std::cout << "x - mean(x, 1) (rows centered) =\n" << x - mean << "\n";
+
   fg::manual_seed(0);
-  const fg::Tensor logits = fg::mul(fg::randn({4, 5}).cuda(), fg::full({}, 3.0, {.device = gpu}));
+  const fg::Tensor logits = fg::randn({4, 5}).cuda() * 3.0f;
   const fg::Tensor labels = fg::tensor({1.0f, 0.0f, 4.0f, 2.0f}, {4, 1}, gpu);
   const fg::Tensor classes = fg::arange(5.0).view({1, 5}).cuda();
   const fg::Tensor one_hot = fg::eq(labels, classes);  // [4, 1] vs [1, 5] -> [4, 5]
@@ -46,14 +53,13 @@ int main() {
   std::cout << "row sums (all 1) = " << fg::sum(probs, 1) << "\n";
 
   // loss_i = -log p_i[label_i]; the one-hot mask picks out the label's probability.
-  const fg::Tensor picked = fg::sum(fg::mul(probs, one_hot), 1);
-  const fg::Tensor loss = fg::neg(fg::log(picked));
+  const fg::Tensor loss = -fg::log(fg::sum(probs * one_hot, 1));
   std::cout << "cross-entropy per sample = " << loss << "\n";
   std::cout << "mean loss = " << fg::sum(loss, 0).item() / 4.0f << "\n";
 
   // A sample is correct when its label's logit equals the row max.
   const fg::Tensor is_max = fg::eq(logits, fg::max(logits, 1, /*keepdim=*/true));
-  const float correct = fg::sum(fg::sum(fg::mul(is_max, one_hot), 1), 0).item();
+  const float correct = fg::sum(fg::sum(is_max * one_hot, 1), 0).item();
   std::cout << "accuracy = " << correct << " / 4\n";
   return 0;
 }

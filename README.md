@@ -54,15 +54,16 @@ fg::Tensor d = a.t().contiguous().cuda();             // copy to the GPU
 std::vector<float> host = d.to_vector();              // copies back to the host
 
 fg::Tensor x = fg::randn({32, 10}).cuda();
-fg::Tensor y = fg::sigmoid(fg::add(x, fg::ones({10}).cuda()));  // broadcasts [10]
+fg::Tensor y = fg::sigmoid(x * 2.0f + fg::ones({10}).cuda());  // broadcasts [10]
 fg::Tensor s = fg::sum(y, 1);                         // [32], reduced on the GPU
 ```
 
 Tensors are strided views (shape, strides, offset) into reference-counted storage, like
 PyTorch, and are all float32 for now. CPU tensors hold host data (creation, printing,
 transfers); all math ops run as CUDA kernels. Phase 2 so far has elementwise ops (neg, relu,
-exp, log, sigmoid, reciprocal, add, mul, maximum, lt, eq, with broadcasting) and reductions
-over one dimension (sum, prod, max); see `include/flashgrad/core/ops.h`.
+exp, log, sigmoid, reciprocal, add, sub, mul, div, maximum, lt, eq, with broadcasting and
+`+ - * /` operators, scalars included) and reductions over one dimension (sum, prod, max); see
+`include/flashgrad/core/ops.h`.
 
 ## Debugging and profiling
 

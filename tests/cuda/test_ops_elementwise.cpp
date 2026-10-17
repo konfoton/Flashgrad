@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -142,7 +143,9 @@ INSTANTIATE_TEST_SUITE_P(
     Ops, BinaryOps,
     ::testing::Values(
         BinaryCase{"add", fg::add, [](double x, double y) { return x + y; }, identity},
+        BinaryCase{"sub", fg::sub, [](double x, double y) { return x - y; }, identity},
         BinaryCase{"mul", fg::mul, [](double x, double y) { return x * y; }, identity},
+        BinaryCase{"div", fg::div, [](double x, double y) { return x / y; }, identity},
         BinaryCase{"maximum", fg::maximum, ref::nan_max, coarse},
         BinaryCase{"lt", fg::lt, [](double x, double y) { return x < y ? 1.0 : 0.0; }, coarse},
         BinaryCase{"eq", fg::eq, [](double x, double y) { return x == y ? 1.0 : 0.0; }, coarse}),
@@ -168,6 +171,48 @@ TEST(BinaryOps, LargeBroadcastTensor) {
                                      [](double x, double y) { return x + y; })));
 }
 
+// ---- Operators ------------------------------------------------------------------------
+
+TEST(Operators, MatchNamedOps) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = ref::random_cuda({3, 4}, 50);
+  const Tensor b = ref::random_cuda({4}, 51);
+  EXPECT_TRUE(ref::close((-a).to_vector(), fg::neg(a).to_vector()));
+  EXPECT_TRUE(ref::close((a + b).to_vector(), fg::add(a, b).to_vector()));
+  EXPECT_TRUE(ref::close((a - b).to_vector(), fg::sub(a, b).to_vector()));
+  EXPECT_TRUE(ref::close((a * b).to_vector(), fg::mul(a, b).to_vector()));
+  EXPECT_TRUE(ref::close((a / b).to_vector(), fg::div(a, b).to_vector()));
+}
+
+TEST(Operators, ScalarOperandsBroadcastOnEitherSide) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = ref::random_cuda({2, 3}, 52);
+  const std::vector<float> av = a.to_vector();
+  const auto expect = [&](const Tensor& out, double (*f)(double)) {
+    EXPECT_EQ(out.shape(), a.shape());
+    EXPECT_TRUE(out.device().is_cuda());
+    EXPECT_TRUE(ref::close(out.to_vector(), ref::unary(av, f)));
+  };
+  expect(a + 2.0f, [](double x) { return x + 2.0; });
+  expect(a - 2.0f, [](double x) { return x - 2.0; });
+  expect(a * 2.0f, [](double x) { return x * 2.0; });
+  expect(a / 2.0f, [](double x) { return x / 2.0; });
+  expect(2.0f + a, [](double x) { return 2.0 + x; });
+  expect(2.0f - a, [](double x) { return 2.0 - x; });
+  expect(2.0f * a, [](double x) { return 2.0 * x; });
+  expect(2.0f / a, [](double x) { return 2.0 / x; });
+}
+
+TEST(Operators, ComposeIntoExpressions) {
+  SKIP_IF_NO_CUDA();
+  const Tensor x = ref::random_cuda({5, 7}, 53);
+  const Tensor out = (x - 1.0f) * (x + 1.0f) / 2.0f;  // (x^2 - 1) / 2, rounded per op
+  const std::vector<float> xv = x.to_vector();
+  std::vector<float> expected(xv.size());
+  for (std::size_t i = 0; i < xv.size(); ++i) expected[i] = (xv[i] - 1.0f) * (xv[i] + 1.0f) / 2.0f;
+  EXPECT_TRUE(ref::close(out.to_vector(), expected));
+}
+
 // ---- Errors ---------------------------------------------------------------------------
 
 TEST(OpsErrors, RejectsCpuTensors) {
@@ -179,7 +224,10 @@ TEST(OpsErrors, RejectsCpuTensors) {
   }
 }
 
-TEST(OpsErrors, RejectsUndefinedTensors) { EXPECT_THROW(fg::neg(Tensor()), fg::Error); }
+TEST(OpsErrors, RejectsUndefinedTensors) {
+  EXPECT_THROW(fg::neg(Tensor()), fg::Error);
+  EXPECT_THROW(Tensor() * 2.0f, fg::Error);
+}
 
 TEST(OpsErrors, RejectsShapesThatDoNotBroadcast) {
   SKIP_IF_NO_CUDA();

@@ -42,6 +42,11 @@ Tensor binary(BinaryOp kind, const char* op, const Tensor& a, const Tensor& b) {
   return out;
 }
 
+Tensor scalar_like(const char* op, const Tensor& like, float s) {
+  detail::check_defined(op, like);
+  return full({}, s, like.options());
+}
+
 Tensor reduce(ReduceOp kind, const char* op, const Tensor& a, std::int64_t dim, bool keepdim) {
   check_input(op, a);
   const std::int64_t d = normalize_dim(dim, a.dim(), op);
@@ -64,7 +69,9 @@ Tensor sigmoid(const Tensor& a) { return unary(UnaryOp::Sigmoid, "sigmoid", a); 
 Tensor reciprocal(const Tensor& a) { return unary(UnaryOp::Reciprocal, "reciprocal", a); }
 
 Tensor add(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Add, "add", a, b); }
+Tensor sub(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Sub, "sub", a, b); }
 Tensor mul(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Mul, "mul", a, b); }
+Tensor div(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Div, "div", a, b); }
 Tensor maximum(const Tensor& a, const Tensor& b) {
   return binary(BinaryOp::Maximum, "maximum", a, b);
 }
@@ -80,5 +87,19 @@ Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim) {
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim) {
   return reduce(ReduceOp::Max, "max", a, dim, keepdim);
 }
+
+Tensor operator-(const Tensor& a) { return neg(a); }
+Tensor operator+(const Tensor& a, const Tensor& b) { return add(a, b); }
+Tensor operator-(const Tensor& a, const Tensor& b) { return sub(a, b); }
+Tensor operator*(const Tensor& a, const Tensor& b) { return mul(a, b); }
+Tensor operator/(const Tensor& a, const Tensor& b) { return div(a, b); }
+Tensor operator+(const Tensor& a, float s) { return add(a, scalar_like("add", a, s)); }
+Tensor operator-(const Tensor& a, float s) { return sub(a, scalar_like("sub", a, s)); }
+Tensor operator*(const Tensor& a, float s) { return mul(a, scalar_like("mul", a, s)); }
+Tensor operator/(const Tensor& a, float s) { return div(a, scalar_like("div", a, s)); }
+Tensor operator+(float s, const Tensor& a) { return add(scalar_like("add", a, s), a); }
+Tensor operator-(float s, const Tensor& a) { return sub(scalar_like("sub", a, s), a); }
+Tensor operator*(float s, const Tensor& a) { return mul(scalar_like("mul", a, s), a); }
+Tensor operator/(float s, const Tensor& a) { return div(scalar_like("div", a, s), a); }
 
 }  // namespace flashgrad

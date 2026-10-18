@@ -15,10 +15,13 @@ add_executable(flashgrad_tests
   core/test_shape.cpp
   core/test_tensor.cpp
   core/test_views.cpp
+  cuda/test_ops_elementwise.cpp
+  cuda/test_ops_reduce.cpp
   cuda/test_runtime.cpp
   cuda/test_smoke.cpp
   cuda/test_tensor_cuda.cpp
 )
+target_include_directories(flashgrad_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(flashgrad_tests PRIVATE
   flashgrad::flashgrad
   flashgrad_options

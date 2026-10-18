@@ -20,6 +20,7 @@ cmake --build build -j
 ctest --test-dir build --output-on-failure
 ./build/examples/device_info
 ./build/examples/tensor_basics
+./build/examples/ops_basics
 ```
 
 Debug build (device debug info + synchronize after every kernel launch, so CUDA
@@ -51,11 +52,18 @@ fg::Tensor row = a[0];                                // views share storage
 fg::Tensor cols = a.slice(1, 0, 128, 2);              // every other column, no copy
 fg::Tensor d = a.t().contiguous().cuda();             // copy to the GPU
 std::vector<float> host = d.to_vector();              // copies back to the host
+
+fg::Tensor x = fg::randn({32, 10}).cuda();
+fg::Tensor y = fg::sigmoid(x * 2.0f + fg::ones({10}).cuda());  // broadcasts [10]
+fg::Tensor s = fg::sum(y, 1);                         // [32], reduced on the GPU
 ```
 
 Tensors are strided views (shape, strides, offset) into reference-counted storage, like
 PyTorch, and are all float32 for now. CPU tensors hold host data (creation, printing,
-transfers); all math ops run as CUDA kernels, which arrive in Phase 2.
+transfers); all math ops run as CUDA kernels. Phase 2 so far has elementwise ops (neg, relu,
+exp, log, sigmoid, reciprocal, add, sub, mul, div, maximum, lt, eq, with broadcasting and
+`+ - * /` operators, scalars included) and reductions over one dimension (sum, prod, max); see
+`include/flashgrad/core/ops.h`.
 
 ## Debugging and profiling
 

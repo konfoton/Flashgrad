@@ -18,22 +18,14 @@ void check_device(const char* op, int device) {
            " device(s) available)");
 }
 
-// Makes `device` current for the lifetime of the guard.
-class DeviceGuard {
- public:
-  explicit DeviceGuard(int device) {
-    FG_CUDA_CHECK(cudaGetDevice(&previous_));
-    if (device != previous_) FG_CUDA_CHECK(cudaSetDevice(device));
-  }
-  ~DeviceGuard() { cudaSetDevice(previous_); }
-  DeviceGuard(const DeviceGuard&) = delete;
-  DeviceGuard& operator=(const DeviceGuard&) = delete;
-
- private:
-  int previous_ = 0;
-};
-
 }  // namespace
+
+DeviceGuard::DeviceGuard(int device) {
+  FG_CUDA_CHECK(cudaGetDevice(&previous_));
+  if (device != previous_) FG_CUDA_CHECK(cudaSetDevice(device));
+}
+
+DeviceGuard::~DeviceGuard() { cudaSetDevice(previous_); }
 
 DataPtr allocate(std::size_t nbytes, int device) {
   check_device("allocate", device);

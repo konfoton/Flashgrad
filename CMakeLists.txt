@@ -69,6 +69,7 @@ add_library(flashgrad
   src/core/tensor_impl.cpp
   src/cpu/ops.cpp
   src/cuda/elementwise.cu
+  src/cuda/matmul.cu
   src/cuda/memory.cpp
   src/cuda/reduce.cu
   src/cuda/runtime.cpp

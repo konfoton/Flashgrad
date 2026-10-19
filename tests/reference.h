@@ -82,6 +82,20 @@ std::vector<float> reduce(const std::vector<float>& a, const Shape& shape, std::
   return out;
 }
 
+// Row-major `a` [m, k] times row-major `b` [k, n].
+inline std::vector<float> matmul(const std::vector<float>& a, const std::vector<float>& b,
+                                 std::int64_t m, std::int64_t k, std::int64_t n) {
+  std::vector<float> out(static_cast<std::size_t>(m * n));
+  for (std::int64_t i = 0; i < m; ++i) {
+    for (std::int64_t j = 0; j < n; ++j) {
+      double acc = 0.0;
+      for (std::int64_t p = 0; p < k; ++p) acc += double{a[i * k + p]} * double{b[p * n + j]};
+      out[i * n + j] = static_cast<float>(acc);
+    }
+  }
+  return out;
+}
+
 inline double nan_max(double a, double b) { return (a > b || std::isnan(a)) ? a : b; }
 
 // ---- Helpers --------------------------------------------------------------------------

@@ -34,6 +34,11 @@ Tensor sum(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim = false);
 
+// ---- Linear algebra ------------------------------------------------------------------
+// Matrix product of 2-D tensors: [m, k] @ [k, n] -> [m, n], accumulated in float32.
+// With k == 0 the result is all zeros.
+Tensor matmul(const Tensor& a, const Tensor& b);
+
 // ---- Operators ------------------------------------------------------------------------
 // Shorthands for the arithmetic ops. A scalar operand becomes a 0-dim tensor on the other
 // operand's device and broadcasts.

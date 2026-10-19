@@ -16,7 +16,9 @@ add_executable(flashgrad_tests
   core/test_tensor.cpp
   core/test_views.cpp
   cuda/test_ops_elementwise.cpp
+  cuda/test_ops_matmul.cpp
   cuda/test_ops_reduce.cpp
+  cuda/test_ops_softmax.cpp
   cuda/test_runtime.cpp
   cuda/test_smoke.cpp
   cuda/test_tensor_cuda.cpp

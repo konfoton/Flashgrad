@@ -88,6 +88,28 @@ Tensor max(const Tensor& a, std::int64_t dim, bool keepdim) {
   return reduce(ReduceOp::Max, "max", a, dim, keepdim);
 }
 
+Tensor log_softmax(const Tensor& a, std::int64_t dim) {
+  check_input("log_softmax", a);
+  const std::int64_t d = normalize_dim(dim, a.dim(), "log_softmax");
+  Tensor out = empty(a.shape(), a.options());
+  cuda::detail::log_softmax(out, a, d);
+  return out;
+}
+
+Tensor matmul(const Tensor& a, const Tensor& b) {
+  check_input("matmul", a);
+  check_input("matmul", b);
+  FG_CHECK(a.device() == b.device(), "matmul: operands are on different devices, got ",
+           describe(a), " and ", describe(b));
+  FG_CHECK(a.dim() == 2 && b.dim() == 2, "matmul: expected 2-D tensors, got ", describe(a),
+           " and ", describe(b));
+  FG_CHECK(a.size(1) == b.size(0), "matmul: inner dimensions don't match, got ", describe(a),
+           " and ", describe(b));
+  Tensor out = empty({a.size(0), b.size(1)}, a.options());
+  cuda::detail::matmul(out, a, b);
+  return out;
+}
+
 Tensor operator-(const Tensor& a) { return neg(a); }
 Tensor operator+(const Tensor& a, const Tensor& b) { return add(a, b); }
 Tensor operator-(const Tensor& a, const Tensor& b) { return sub(a, b); }

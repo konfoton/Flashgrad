@@ -52,8 +52,9 @@ int main() {
   std::cout << "softmax(logits) =\n" << probs << "\n";
   std::cout << "row sums (all 1) = " << fg::sum(probs, 1) << "\n";
 
-  // loss_i = -log p_i[label_i]; the one-hot mask picks out the label's probability.
-  const fg::Tensor loss = -fg::log(fg::sum(probs * one_hot, 1));
+  // loss_i = -log p_i[label_i]; the one-hot mask picks out the label's log-probability.
+  // log_softmax is one kernel and stays finite where log(softmax) would underflow to -inf.
+  const fg::Tensor loss = -fg::sum(fg::log_softmax(logits, 1) * one_hot, 1);
   std::cout << "cross-entropy per sample = " << loss << "\n";
   std::cout << "mean loss = " << fg::sum(loss, 0).item() / 4.0f << "\n";
 

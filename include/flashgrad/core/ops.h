@@ -34,6 +34,11 @@ Tensor sum(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim = false);
 
+// ---- Softmax -------------------------------------------------------------------------
+// log(softmax(a)) along `dim`, computed as (a - max) - log(sum(exp(a - max))) so large
+// inputs don't overflow. A NaN in a row makes the whole row NaN.
+Tensor log_softmax(const Tensor& a, std::int64_t dim);
+
 // ---- Linear algebra ------------------------------------------------------------------
 // Matrix product of 2-D tensors: [m, k] @ [k, n] -> [m, n], accumulated in float32.
 // With k == 0 the result is all zeros.

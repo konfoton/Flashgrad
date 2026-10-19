@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <vector>
 
@@ -82,6 +83,8 @@ std::vector<float> reduce(const std::vector<float>& a, const Shape& shape, std::
   return out;
 }
 
+inline double nan_max(double a, double b) { return (a > b || std::isnan(a)) ? a : b; }
+
 // Row-major `a` [m, k] times row-major `b` [k, n].
 inline std::vector<float> matmul(const std::vector<float>& a, const std::vector<float>& b,
                                  std::int64_t m, std::int64_t k, std::int64_t n) {
@@ -96,7 +99,30 @@ inline std::vector<float> matmul(const std::vector<float>& a, const std::vector<
   return out;
 }
 
-inline double nan_max(double a, double b) { return (a > b || std::isnan(a)) ? a : b; }
+// log_softmax of row-major `a` of `shape` along `dim`, in double.
+inline std::vector<float> log_softmax(const std::vector<float>& a, const Shape& shape,
+                                      std::int64_t dim) {
+  std::int64_t outer = 1, inner = 1;
+  for (std::int64_t d = 0; d < dim; ++d) outer *= shape[d];
+  for (std::int64_t d = dim + 1; d < static_cast<std::int64_t>(shape.size()); ++d) {
+    inner *= shape[d];
+  }
+  const std::int64_t n = shape[dim];
+  std::vector<float> out(a.size());
+  for (std::int64_t o = 0; o < outer; ++o) {
+    for (std::int64_t in = 0; in < inner; ++in) {
+      const auto at = [&](std::int64_t k) { return (o * n + k) * inner + in; };
+      double max = -std::numeric_limits<double>::infinity();
+      for (std::int64_t k = 0; k < n; ++k) max = nan_max(max, double{a[at(k)]});
+      double sum = 0.0;
+      for (std::int64_t k = 0; k < n; ++k) sum += std::exp(double{a[at(k)]} - max);
+      for (std::int64_t k = 0; k < n; ++k) {
+        out[at(k)] = static_cast<float>(double{a[at(k)]} - max - std::log(sum));
+      }
+    }
+  }
+  return out;
+}
 
 // ---- Helpers --------------------------------------------------------------------------
 

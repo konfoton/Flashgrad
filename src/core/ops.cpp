@@ -88,6 +88,14 @@ Tensor max(const Tensor& a, std::int64_t dim, bool keepdim) {
   return reduce(ReduceOp::Max, "max", a, dim, keepdim);
 }
 
+Tensor log_softmax(const Tensor& a, std::int64_t dim) {
+  check_input("log_softmax", a);
+  const std::int64_t d = normalize_dim(dim, a.dim(), "log_softmax");
+  Tensor out = empty(a.shape(), a.options());
+  cuda::detail::log_softmax(out, a, d);
+  return out;
+}
+
 Tensor matmul(const Tensor& a, const Tensor& b) {
   check_input("matmul", a);
   check_input("matmul", b);

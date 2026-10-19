@@ -37,4 +37,7 @@ void reduce(ReduceOp op, const Tensor& out, const Tensor& a, std::int64_t dim,
 // out = a @ b for 2-D `a` [m, k] and `b` [k, n]; `out` is [m, n] and contiguous.
 void matmul(const Tensor& out, const Tensor& a, const Tensor& b, Stream stream = nullptr);
 
+// out = log_softmax(a) along `dim`; `out` has the shape of `a`.
+void log_softmax(const Tensor& out, const Tensor& a, std::int64_t dim, Stream stream = nullptr);
+
 }  // namespace flashgrad::cuda::detail

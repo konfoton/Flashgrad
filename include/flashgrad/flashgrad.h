@@ -10,4 +10,5 @@
 #include "flashgrad/core/shape.h"
 #include "flashgrad/core/storage.h"
 #include "flashgrad/core/tensor.h"
+#include "flashgrad/cuda/allocator.h"
 #include "flashgrad/cuda/runtime.h"

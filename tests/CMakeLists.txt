@@ -33,3 +33,8 @@ target_link_libraries(flashgrad_tests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(flashgrad_tests DISCOVERY_MODE PRE_TEST)
+# The whole suite again with the caching allocator off, so every free goes to cudaFree.
+gtest_discover_tests(flashgrad_tests DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "no_caching."
+  PROPERTIES ENVIRONMENT "FLASHGRAD_NO_CACHING=1"
+)

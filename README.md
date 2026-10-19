@@ -67,8 +67,13 @@ and a shared-memory tiled matmul for 2-D tensors; see `include/flashgrad/core/op
 
 ## Debugging and profiling
 
+GPU memory goes through a caching allocator: freed blocks are kept and reused instead of
+being returned with `cudaFree`, which waits for the whole GPU. `flashgrad::cuda::memory_stats()`
+reports what is allocated and cached, and `FLASHGRAD_NO_CACHING=1` turns caching off, which
+compute-sanitizer needs to see out-of-bounds accesses inside cached blocks.
+
 ```bash
-compute-sanitizer --tool memcheck ./build-debug/tests/flashgrad_tests
+FLASHGRAD_NO_CACHING=1 compute-sanitizer --tool memcheck ./build-debug/tests/flashgrad_tests
 nsys profile -o timeline ./build/examples/<program>
 ncu --set full -o kernels ./build/examples/<program>
 ```

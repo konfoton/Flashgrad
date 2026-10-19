@@ -26,8 +26,11 @@ ctest --test-dir build --output-on-failure
 # Debug: device debug info + sync after every kernel
 cmake -S . -B build-debug -DCMAKE_BUILD_TYPE=Debug -DFLASHGRAD_SYNC_KERNELS=ON
 cmake --build build-debug -j
-compute-sanitizer --tool memcheck ./build-debug/tests/flashgrad_tests
+# without caching, so memcheck sees every allocation (deliberate OOM tests report API errors)
+FLASHGRAD_NO_CACHING=1 compute-sanitizer --tool memcheck ./build-debug/tests/flashgrad_tests
 ```
+
+ctest runs the suite twice: as is, and with `FLASHGRAD_NO_CACHING=1` (prefix `no_caching.`).
 
 The build uses `-Werror` for host C++ code — fix warnings, don't suppress them.
 After any change, build **and** run the tests before saying the work is done. For new or changed
@@ -66,7 +69,10 @@ Don't start a phase before the previous phase's milestone works and is tested.
   the op name, shapes, dtype and device in the message. Every CUDA runtime call is wrapped in
   `FG_CUDA_CHECK(...)`, and every kernel launch is followed by `FG_CUDA_KERNEL_CHECK()`.
   Destructors must not throw (call `cudaFree` etc. without the check macro there).
-- **Resources:** RAII only, no raw owning pointers or manual `cudaFree` in normal code.
+- **Resources:** RAII only, no raw owning pointers or manual `cudaFree` in normal code. Device
+  memory comes from the caching allocator (`src/cuda/caching_allocator.cpp`) through
+  `flashgrad::allocate`; never call `cudaMalloc` directly. It assumes one stream: using more
+  streams needs stream-aware freeing first.
 - **Kernels:** use grid-stride loops or explicit bounds checks; use 64-bit indices
   (`std::int64_t`) for element counts and offsets; mark non-aliasing pointers `__restrict__`.
 - **Asynchrony:** library ops must not call `cudaDeviceSynchronize`; synchronize only when

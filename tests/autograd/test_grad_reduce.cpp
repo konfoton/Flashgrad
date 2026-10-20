@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "flashgrad/core/ops.h"
@@ -148,6 +149,32 @@ TEST(ReduceGrads, ProdWithZeros) {
   const Tensor x = a.detach().requires_grad_();
   fg::prod(x, 1).backward(fg::ones({3}, {.device = fg::Device::cuda()}));
   EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{12, 8, 6, 0, 8, 0, 0, 0, 0}));
+}
+
+TEST(ReduceGrads, MaxAlongEachDimension) {
+  SKIP_IF_NO_CUDA();
+  // Random rows have no ties, except in the expanded input, which test MaxSplitsTies covers.
+  for (const Tensor& a : {inputs()[0], inputs()[1]}) {
+    for (std::int64_t d = 0; d < a.dim(); ++d) {
+      for (const bool keepdim : {false, true}) {
+        const auto op = [&](const std::vector<Tensor>& in) { return fg::max(in[0], d, keepdim); };
+        const auto reference = [&](const std::vector<Values>& in) {
+          return ref::reduce(in[0], a.shape(), d, ref::nan_max,
+                             -std::numeric_limits<double>::infinity());
+        };
+        EXPECT_TRUE(gradcheck::check(op, reference, {a}))
+            << "dim " << d << " keepdim " << keepdim << " of " << fg::describe(a);
+      }
+    }
+  }
+}
+
+TEST(ReduceGrads, MaxSplitsTies) {
+  SKIP_IF_NO_CUDA();
+  const Tensor x =
+      fg::tensor({1, 3, 3, 2, 5, 5, 5, 0}, {2, 4}, fg::Device::cuda()).requires_grad_();
+  fg::max(x, 1).backward(fg::tensor({2, 3}, fg::Device::cuda()));
+  EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{0, 1, 1, 0, 1, 1, 1, 0}));
 }
 
 }  // namespace

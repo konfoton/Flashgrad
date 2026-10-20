@@ -215,8 +215,18 @@ Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim) {
   }
   return out;
 }
+// The gradient goes to the elements equal to the row's max, split evenly between ties.
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim) {
-  return reduce(ReduceOp::Max, "max", a, dim, keepdim);
+  Tensor out = reduce(ReduceOp::Max, "max", a, dim, keepdim);
+  if (needs_grad({a})) {
+    const std::int64_t d = normalize_dim(dim, a.dim(), "max");
+    record(out, "max", {a}, [a = a.detach(), out = out.detach(), d, keepdim](const Tensor& g) {
+      const Tensor is_max = eq(a, keepdim ? out : out.unsqueeze(d));
+      const Tensor share = is_max / sum(is_max, d, /*keepdim=*/true);
+      return Grads{(keepdim ? g : g.unsqueeze(d)) * share};
+    });
+  }
+  return out;
 }
 
 Tensor sum(const Tensor& a) {

@@ -126,6 +126,8 @@ class Tensor {
   void backward(const Tensor& gradient = Tensor(), bool retain_graph = false) const;
 
   // ---- In-place ----------------------------------------------------------------------
+  // Not recorded by autograd: with grad mode on, they throw when this tensor or the source
+  // requires grad. Parameter updates go inside a NoGradGuard.
   // Copies `src` (broadcast to shape()) into this tensor, moving data between devices as
   // needed.
   const Tensor& copy_(const Tensor& src) const;

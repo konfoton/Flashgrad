@@ -17,6 +17,7 @@ add_executable(flashgrad_tests
   autograd/test_grad_softmax.cpp
   autograd/test_grad_views.cpp
   autograd/test_gradcheck.cpp
+  autograd/test_in_place.cpp
   autograd/test_tensor_autograd.cpp
   core/test_dtype_device.cpp
   core/test_error.cpp

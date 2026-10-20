@@ -442,6 +442,7 @@ const Tensor& Tensor::copy_(const Tensor& src) const {
   detail::check_defined("copy_", src);
   FG_CHECK(broadcast_shapes(src.shape(), shape(), "copy_") == shape(), "copy_: cannot broadcast ",
            describe(src), " to ", describe(*this));
+  detail::check_in_place("copy_", *this, &src);
   if (numel() == 0) return *this;
   detail::check_writable("copy_", *this);
   // Reading from memory that is being written would make the result order-dependent.
@@ -474,6 +475,7 @@ const Tensor& Tensor::copy_(const Tensor& src) const {
 
 const Tensor& Tensor::fill_(double value) const {
   detail::check_defined("fill_", *this);
+  detail::check_in_place("fill_", *this);
   if (numel() == 0) return *this;
   if (device().is_cpu()) {
     cpu::fill(*this, value);
@@ -494,6 +496,7 @@ template <typename F>
 const Tensor& apply_in_place(const Tensor& self, const Tensor& other, const char* op, F f) {
   detail::check_defined(op, self);
   detail::check_defined(op, other);
+  detail::check_in_place(op, self, &other);
   FG_CHECK(broadcast_shapes(other.shape(), self.shape(), op) == self.shape(), op,
            ": cannot broadcast ", describe(other), " to ", describe(self));
   self.copy_(f(self, other));

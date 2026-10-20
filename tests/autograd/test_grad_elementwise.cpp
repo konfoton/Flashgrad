@@ -28,6 +28,8 @@ using gradcheck::Values;
 using Transform = std::function<float(float)>;
 
 float identity(float v) { return v; }
+// Keeps values at least 0.5 away from zero, for division and logarithms.
+float away_from_zero(float v) { return v >= 0.0f ? v + 0.5f : v - 0.5f; }
 
 // ---- Binary ---------------------------------------------------------------------------
 
@@ -99,7 +101,8 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Values(
         BinaryGradCase{"add", fg::add, [](double x, double y) { return x + y; }},
         BinaryGradCase{"sub", fg::sub, [](double x, double y) { return x - y; }},
-        BinaryGradCase{"mul", fg::mul, [](double x, double y) { return x * y; }}),
+        BinaryGradCase{"mul", fg::mul, [](double x, double y) { return x * y; }},
+        BinaryGradCase{"div", fg::div, [](double x, double y) { return x / y; }, away_from_zero}),
     [](const auto& test) { return test.param.name; });
 
 }  // namespace

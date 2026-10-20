@@ -105,7 +105,18 @@ Tensor mul(const Tensor& a, const Tensor& b) {
   }
   return out;
 }
-Tensor div(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Div, "div", a, b); }
+// For out = a / b: g / b for a, and -g * a / b^2 = -g * out / b for b.
+Tensor div(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Div, "div", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "div", {a, b},
+           [b = b.detach(), out = out.detach(), need_a = a.requires_grad(),
+            need_b = b.requires_grad()](const Tensor& g) {
+             return Grads{need_a ? g / b : Tensor(), need_b ? -(g * out) / b : Tensor()};
+           });
+  }
+  return out;
+}
 Tensor maximum(const Tensor& a, const Tensor& b) {
   return binary(BinaryOp::Maximum, "maximum", a, b);
 }

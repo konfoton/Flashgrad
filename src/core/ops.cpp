@@ -166,8 +166,16 @@ Tensor div(const Tensor& a, const Tensor& b) {
   }
   return out;
 }
+// The gradient goes to the larger input; on a tie each input gets half.
 Tensor maximum(const Tensor& a, const Tensor& b) {
-  return binary(BinaryOp::Maximum, "maximum", a, b);
+  Tensor out = binary(BinaryOp::Maximum, "maximum", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "maximum", {a, b}, [a = a.detach(), b = b.detach()](const Tensor& g) {
+      const Tensor half_tie = eq(a, b) * 0.5f;
+      return Grads{g * (lt(b, a) + half_tie), g * (lt(a, b) + half_tie)};
+    });
+  }
+  return out;
 }
 Tensor lt(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Lt, "lt", a, b); }
 Tensor eq(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Eq, "eq", a, b); }

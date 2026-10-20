@@ -157,7 +157,22 @@ INSTANTIATE_TEST_SUITE_P(
         BinaryGradCase{"add", fg::add, [](double x, double y) { return x + y; }},
         BinaryGradCase{"sub", fg::sub, [](double x, double y) { return x - y; }},
         BinaryGradCase{"mul", fg::mul, [](double x, double y) { return x * y; }},
-        BinaryGradCase{"div", fg::div, [](double x, double y) { return x / y; }, away_from_zero}),
+        BinaryGradCase{"div", fg::div, [](double x, double y) { return x / y; }, away_from_zero},
+        BinaryGradCase{"maximum", fg::maximum, ref::nan_max}),
     [](const auto& test) { return test.param.name; });
+
+TEST(BinaryGrads, MaximumSplitsTiesEvenly) {
+  SKIP_IF_NO_CUDA();
+  const fg::Device gpu = fg::Device::cuda();
+  const Tensor a = fg::tensor({1, 5, 3}, gpu).requires_grad_();
+  const Tensor b = fg::tensor({2, 5, 1}, gpu).requires_grad_();
+  fg::maximum(a, b).backward(fg::ones({3}, {.device = gpu}));
+  EXPECT_EQ(a.grad().to_vector(), (std::vector<float>{0, 0.5f, 1}));
+  EXPECT_EQ(b.grad().to_vector(), (std::vector<float>{1, 0.5f, 0}));
+
+  const Tensor x = fg::tensor({-1, 2}, gpu).requires_grad_();
+  fg::maximum(x, x).backward(fg::ones({2}, {.device = gpu}));  // both halves reach x
+  EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{1, 1}));
+}
 
 }  // namespace

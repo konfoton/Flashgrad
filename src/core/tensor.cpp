@@ -7,15 +7,21 @@
 #include <utility>
 #include <vector>
 
+#include "autograd/function.h"
 #include "core/checks.h"
 #include "cpu/ops.h"
 #include "cuda/memory.h"
 #include "cuda/ops.h"
+#include "flashgrad/autograd/grad_mode.h"
 #include "flashgrad/core/ops.h"
 
 namespace flashgrad {
 
 namespace {
+
+using autograd::detail::needs_grad;
+using autograd::detail::record;
+using Grads = std::vector<Tensor>;
 
 // Strides that let a tensor with (sizes, strides) be viewed with `new_shape` without
 // copying, or nullopt if no such strides exist. `new_shape` must have the same numel.
@@ -169,13 +175,14 @@ float* Tensor::data_ptr() const {
 
 // ---- Host access -----------------------------------------------------------------------
 
+// Reading values isn't part of the graph, hence detach() before the copies.
 float Tensor::item() const {
   FG_CHECK(numel() == 1, "item: expected a tensor with one element, got ", describe(*this));
-  return *cpu().data_ptr();
+  return *detach().cpu().data_ptr();
 }
 
 std::vector<float> Tensor::to_vector() const {
-  const Tensor host = cpu().contiguous();
+  const Tensor host = detach().cpu().contiguous();
   const float* data = host.data_ptr();
   if (data == nullptr) return {};
   return std::vector<float>(data, data + host.numel());
@@ -340,16 +347,28 @@ Tensor Tensor::select(std::int64_t d, std::int64_t index) const {
 
 Tensor Tensor::contiguous() const { return is_contiguous() ? *this : clone(); }
 
+// A copy passes the gradient through unchanged (moved back to the source's device).
 Tensor Tensor::clone() const {
   Tensor out = empty(shape(), options());
-  out.copy_(*this);
+  {
+    const NoGradGuard no_grad;
+    out.copy_(*this);
+  }
+  if (needs_grad({*this})) record(out, "clone", {*this}, [](const Tensor& g) { return Grads{g}; });
   return out;
 }
 
 Tensor Tensor::to(Device target) const {
   if (device() == target) return *this;
   Tensor out = empty(shape(), {.dtype = dtype(), .device = target});
-  out.copy_(*this);
+  {
+    const NoGradGuard no_grad;
+    out.copy_(*this);
+  }
+  if (needs_grad({*this})) {
+    record(out, "to", {*this},
+           [source = device()](const Tensor& g) { return Grads{g.to(source)}; });
+  }
   return out;
 }
 

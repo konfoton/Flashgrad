@@ -105,7 +105,17 @@ Tensor log(const Tensor& a) {
   return out;
 }
 
-Tensor sigmoid(const Tensor& a) { return unary(UnaryOp::Sigmoid, "sigmoid", a); }
+// d sigmoid(a) = g * s * (1 - s) with s = sigmoid(a), the saved output.
+Tensor sigmoid(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Sigmoid, "sigmoid", a);
+  if (needs_grad({a})) {
+    record(out, "sigmoid", {a}, [s = out.detach()](const Tensor& g) {
+      return Grads{g * s * (1.0f - s)};
+    });
+  }
+  return out;
+}
+
 Tensor reciprocal(const Tensor& a) { return unary(UnaryOp::Reciprocal, "reciprocal", a); }
 
 Tensor add(const Tensor& a, const Tensor& b) {

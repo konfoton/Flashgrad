@@ -68,16 +68,21 @@ Tensor reduce(ReduceOp kind, const char* op, const Tensor& a, std::int64_t dim, 
 
 }  // namespace
 
-Tensor neg(const Tensor& a) { return unary(UnaryOp::Neg, "neg", a); }
+// Each differentiable op computes its output, then records how to get the inputs' gradients
+// from the output's gradient g (see autograd/function.h). Gradients may keep the broadcast
+// shape of the output; the engine sums them back to each input's shape.
+
+Tensor neg(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Neg, "neg", a);
+  if (needs_grad({a})) record(out, "neg", {a}, [](const Tensor& g) { return Grads{-g}; });
+  return out;
+}
+
 Tensor relu(const Tensor& a) { return unary(UnaryOp::Relu, "relu", a); }
 Tensor exp(const Tensor& a) { return unary(UnaryOp::Exp, "exp", a); }
 Tensor log(const Tensor& a) { return unary(UnaryOp::Log, "log", a); }
 Tensor sigmoid(const Tensor& a) { return unary(UnaryOp::Sigmoid, "sigmoid", a); }
 Tensor reciprocal(const Tensor& a) { return unary(UnaryOp::Reciprocal, "reciprocal", a); }
-
-// Each differentiable op computes its output, then records how to get the inputs' gradients
-// from the output's gradient g (see autograd/function.h). Gradients may keep the broadcast
-// shape of the output; the engine sums them back to each input's shape.
 
 Tensor add(const Tensor& a, const Tensor& b) {
   Tensor out = binary(BinaryOp::Add, "add", a, b);

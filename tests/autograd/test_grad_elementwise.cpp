@@ -31,6 +31,44 @@ float identity(float v) { return v; }
 // Keeps values at least 0.5 away from zero, for division and logarithms.
 float away_from_zero(float v) { return v >= 0.0f ? v + 0.5f : v - 0.5f; }
 
+// ---- Unary ----------------------------------------------------------------------------
+
+struct UnaryGradCase {
+  std::string name;
+  Tensor (*op)(const Tensor&);
+  double (*reference)(double);
+  Transform input = identity;  // keeps inputs inside the op's domain and away from kinks
+};
+
+void PrintTo(const UnaryGradCase& c, std::ostream* os) { *os << c.name; }
+
+class UnaryGrads : public ::testing::TestWithParam<UnaryGradCase> {};
+
+TEST_P(UnaryGrads, MatchFiniteDifferences) {
+  SKIP_IF_NO_CUDA();
+  const UnaryGradCase& c = GetParam();
+  const std::vector<Tensor> inputs = {
+      ref::random_cuda({}, 1, c.input),
+      ref::random_cuda({7}, 2, c.input),
+      ref::random_cuda({3, 4}, 3, c.input),
+      ref::random_cuda({4, 6}, 4, c.input).t().slice(0, 1, 6, 2),  // non-contiguous
+      ref::random_cuda({1, 4}, 5, c.input).expand({3, 4}),          // stride 0
+      ref::random_cuda({0, 2}, 6, c.input),
+  };
+  const auto reference = [&](const std::vector<Values>& in) {
+    return ref::unary(in[0], c.reference);
+  };
+  const auto op = [&](const std::vector<Tensor>& in) { return c.op(in[0]); };
+  for (const Tensor& a : inputs) {
+    EXPECT_TRUE(gradcheck::check(op, reference, {a})) << c.name << " of " << fg::describe(a);
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Ops, UnaryGrads,
+    ::testing::Values(UnaryGradCase{"neg", fg::neg, [](double x) { return -x; }}),
+    [](const auto& test) { return test.param.name; });
+
 // ---- Binary ---------------------------------------------------------------------------
 
 struct BinaryGradCase {

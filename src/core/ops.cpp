@@ -116,7 +116,16 @@ Tensor sigmoid(const Tensor& a) {
   return out;
 }
 
-Tensor reciprocal(const Tensor& a) { return unary(UnaryOp::Reciprocal, "reciprocal", a); }
+// d (1 / a) = -g / a^2 = -g * out^2.
+Tensor reciprocal(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Reciprocal, "reciprocal", a);
+  if (needs_grad({a})) {
+    record(out, "reciprocal", {a}, [out = out.detach()](const Tensor& g) {
+      return Grads{-(g * out * out)};
+    });
+  }
+  return out;
+}
 
 Tensor add(const Tensor& a, const Tensor& b) {
   Tensor out = binary(BinaryOp::Add, "add", a, b);
@@ -133,6 +142,7 @@ Tensor sub(const Tensor& a, const Tensor& b) {
   }
   return out;
 }
+
 Tensor mul(const Tensor& a, const Tensor& b) {
   Tensor out = binary(BinaryOp::Mul, "mul", a, b);
   if (needs_grad({a, b})) {

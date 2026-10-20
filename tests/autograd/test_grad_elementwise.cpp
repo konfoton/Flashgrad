@@ -74,7 +74,9 @@ INSTANTIATE_TEST_SUITE_P(
                                     [](float v) { return std::abs(v) + 0.5f; }},
                       UnaryGradCase{"sigmoid", fg::sigmoid,
                                     [](double x) { return 1.0 / (1.0 + std::exp(-x)); },
-                                    [](float v) { return 3.0f * v; }}),
+                                    [](float v) { return 3.0f * v; }},
+                      UnaryGradCase{"reciprocal", fg::reciprocal, [](double x) { return 1.0 / x; },
+                                    away_from_zero}),
     [](const auto& test) { return test.param.name; });
 
 TEST(UnaryGrads, ReluGradientIsZeroAtZero) {

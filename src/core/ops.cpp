@@ -268,6 +268,13 @@ Tensor log_softmax(const Tensor& a, std::int64_t dim) {
   const std::int64_t d = normalize_dim(dim, a.dim(), "log_softmax");
   Tensor out = empty(a.shape(), a.options());
   cuda::detail::log_softmax(out, a, d);
+  // With p = softmax(a) = exp(out): d out_i / d a_j = [i == j] - p_j, so the gradient is
+  // g - p * sum(g) along the row.
+  if (needs_grad({a})) {
+    record(out, "log_softmax", {a}, [out = out.detach(), d](const Tensor& g) {
+      return Grads{g - exp(out) * sum(g, d, /*keepdim=*/true)};
+    });
+  }
   return out;
 }
 

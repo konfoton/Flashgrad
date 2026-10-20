@@ -117,6 +117,12 @@ class Tensor {
   void set_grad(const Tensor& grad) const;
   // The same data without autograd history: a leaf that doesn't require grad.
   Tensor detach() const;
+  // Computes the gradients of this tensor with respect to the leaves that require grad and
+  // adds them to their grad(). `gradient` is the gradient of this tensor; it may be omitted
+  // for a tensor with one element (it is then 1). The graph's saved tensors are freed
+  // afterwards unless `retain_graph` is set. Gradients are first order only: backward
+  // itself is never recorded.
+  void backward(const Tensor& gradient = Tensor(), bool retain_graph = false) const;
 
   // ---- In-place ----------------------------------------------------------------------
   // Copies `src` (broadcast to shape()) into this tensor, moving data between devices as

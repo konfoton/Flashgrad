@@ -64,6 +64,29 @@ TEST(TensorAutograd, UndefinedTensorsThrow) {
   EXPECT_THROW(Tensor().detach(), fg::Error);
 }
 
+TEST(Backward, OnALeafAccumulatesTheGradient) {
+  const Tensor x = fg::zeros({3}).requires_grad_();
+  const Tensor g = fg::tensor({1, 2, 3});
+  x.backward(g);
+  EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{1, 2, 3}));
+  EXPECT_FALSE(x.grad().storage().is_same(g.storage()));  // copied, not shared
+  EXPECT_FALSE(x.grad().requires_grad());
+}
+
+TEST(Backward, ScalarOutputsDefaultToAGradientOfOne) {
+  const Tensor x = fg::full({}, 5.0).requires_grad_();
+  x.backward();
+  EXPECT_EQ(x.grad().item(), 1.0f);
+}
+
+TEST(Backward, RejectsInvalidCalls) {
+  EXPECT_THROW(fg::ones({2}).backward(fg::ones({2})), fg::Error);  // doesn't require grad
+  const Tensor x = fg::ones({2}).requires_grad_();
+  EXPECT_THROW(x.backward(), fg::Error);                // non-scalar without a gradient
+  EXPECT_THROW(x.backward(fg::ones({3})), fg::Error);   // wrong shape
+  EXPECT_THROW(Tensor().backward(), fg::Error);
+}
+
 TEST(AutogradNode, AppliesAndReleases) {
   int calls = 0;
   Node node("double", {fg::autograd::Edge{}}, [&](const Tensor& g) {

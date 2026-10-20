@@ -55,6 +55,8 @@ endif()
 # Library
 # ---------------------------------------------------------------------------
 add_library(flashgrad
+  src/autograd/engine.cpp
+  src/autograd/function.cpp
   src/autograd/grad_mode.cpp
   src/autograd/node.cpp
   src/autograd/tensor_autograd.cpp

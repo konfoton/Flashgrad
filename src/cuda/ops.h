@@ -28,6 +28,10 @@ enum class ReduceOp { Sum, Prod, Max };
 // than kMaxDims dimensions if it is contiguous.
 void fill(const Tensor& out, float value, Stream stream = nullptr);
 
+// out = a, element by element; `a` has the shape of `out` (broadcast beforehand with expand).
+// `out` may be any existing view whose elements don't overlap each other or `a`.
+void copy(const Tensor& out, const Tensor& a, Stream stream = nullptr);
+
 // out = op(a); `a` has the shape of `out`.
 void unary(UnaryOp op, const Tensor& out, const Tensor& a, Stream stream = nullptr);
 

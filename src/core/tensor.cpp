@@ -104,6 +104,20 @@ Tensor download(const Tensor& src) {
       std::make_shared<TensorImpl>(std::move(host), src.shape(), src.strides(), 0, src.dtype()));
 }
 
+// dst = src for CUDA tensors of the same shape on the same device: one memcpy when both are
+// contiguous, otherwise the strided copy kernel.
+void copy_on_device(const Tensor& dst, const Tensor& src) {
+  if (dst.is_contiguous() && src.is_contiguous()) {
+    cuda::detail::copy_device_to_device(dst.data_ptr(), dst.device().index(), src.data_ptr(),
+                                        src.device().index(), dst.nbytes());
+    return;
+  }
+  FG_CHECK(dst.dim() <= cuda::detail::kMaxDims, "copy_: at most ", cuda::detail::kMaxDims,
+           " dimensions are supported for non-contiguous CUDA tensors, got ", describe(src),
+           " -> ", describe(dst));
+  cuda::detail::copy(dst, src);
+}
+
 }  // namespace
 
 Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(std::move(impl)) {}
@@ -353,19 +367,22 @@ const Tensor& Tensor::copy_(const Tensor& src) const {
   } else if (device().is_cpu()) {  // CUDA -> CPU
     cpu::copy(*this, download(source).expand(shape()));
   } else if (source.device().is_cpu()) {  // CPU -> CUDA
-    FG_CHECK(is_contiguous(), "copy_: copying into a non-contiguous CUDA tensor needs the CUDA ",
-             "kernels of Phase 2, got destination ", describe(*this));
-    // Lay out the data contiguously on the host, then upload it in one transfer.
+    // Lay out the data contiguously on the host and upload it in one transfer, into this
+    // tensor if it's contiguous, otherwise into a buffer that a kernel then scatters.
     const Tensor staging = empty(shape(), {.dtype = dtype(), .device = Device::cpu()});
     cpu::copy(staging, source.expand(shape()));
-    cuda::detail::copy_host_to_device(data_ptr(), device().index(), staging.data_ptr(), nbytes());
-  } else {  // CUDA -> CUDA
-    FG_CHECK(shape() == source.shape() && is_contiguous() && source.is_contiguous(),
-             "copy_: CUDA-to-CUDA copies with broadcasting or non-contiguous ",
-             "tensors need the CUDA kernels of Phase 2, got ", describe(source), " -> ",
-             describe(*this));
-    cuda::detail::copy_device_to_device(data_ptr(), device().index(), source.data_ptr(),
-                                        source.device().index(), nbytes());
+    const Tensor target = is_contiguous() ? *this : empty(shape(), options());
+    cuda::detail::copy_host_to_device(target.data_ptr(), device().index(), staging.data_ptr(),
+                                      nbytes());
+    if (!target.is_same(*this)) copy_on_device(*this, target);
+  } else if (device() == source.device()) {  // CUDA -> CUDA, same device
+    copy_on_device(*this, source.expand(shape()));
+  } else {  // CUDA -> CUDA between devices: a peer copy of contiguous data
+    const Tensor packed = source.expand(shape()).contiguous();
+    const Tensor target = is_contiguous() ? *this : empty(shape(), options());
+    cuda::detail::copy_device_to_device(target.data_ptr(), device().index(), packed.data_ptr(),
+                                        packed.device().index(), nbytes());
+    if (!target.is_same(*this)) copy_on_device(*this, target);
   }
   return *this;
 }

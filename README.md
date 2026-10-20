@@ -21,6 +21,7 @@ ctest --test-dir build --output-on-failure
 ./build/examples/device_info
 ./build/examples/tensor_basics
 ./build/examples/ops_basics
+./build/examples/autograd_basics
 ```
 
 Debug build (device debug info + synchronize after every kernel launch, so CUDA
@@ -56,14 +57,30 @@ std::vector<float> host = d.to_vector();              // copies back to the host
 fg::Tensor x = fg::randn({32, 10}).cuda();
 fg::Tensor y = fg::sigmoid(x * 2.0f + fg::ones({10}).cuda());  // broadcasts [10]
 fg::Tensor s = fg::sum(y, 1);                         // [32], reduced on the GPU
+
+// Autograd: leaves that require grad get their gradients from backward().
+fg::Tensor w = fg::randn({10, 3}, {.device = fg::Device::cuda()}).requires_grad_();
+fg::Tensor loss = fg::mean(fg::relu(fg::matmul(x, w)));
+loss.backward();                                      // w.grad() is [10, 3]
+{
+  fg::NoGradGuard no_grad;                            // updates aren't recorded
+  w.sub_(w.grad() * 0.1f);
+}
 ```
 
 Tensors are strided views (shape, strides, offset) into reference-counted storage, like
 PyTorch, and are all float32 for now. CPU tensors hold host data (creation, printing,
-transfers); all math ops run as CUDA kernels. Phase 2 so far has elementwise ops (neg, relu,
-exp, log, sigmoid, reciprocal, add, sub, mul, div, maximum, lt, eq, with broadcasting and
-`+ - * /` operators, scalars included), reductions over one dimension (sum, prod, max), log_softmax
-and a shared-memory tiled matmul for 2-D tensors; see `include/flashgrad/core/ops.h`.
+transfers); all math ops run as CUDA kernels: elementwise ops (neg, relu, exp, log, sigmoid,
+reciprocal, add, sub, mul, div, maximum, lt, eq, with broadcasting and `+ - * /` operators,
+scalars included), reductions over one dimension (sum, prod, max, mean) and over all elements
+(sum, mean), log_softmax and a shared-memory tiled matmul for 2-D tensors; see
+`include/flashgrad/core/ops.h`.
+
+Every op and view except the comparisons and `as_strided` is differentiable. Ops on tensors
+that require grad record a graph of nodes (`include/flashgrad/autograd/node.h`), and
+`backward()` walks it in topological order, adding the gradients to the leaves' `grad()`.
+Gradients are first order only, and in-place ops throw on tensors that require grad unless
+grad mode is off (`NoGradGuard`).
 
 ## Debugging and profiling
 
@@ -82,9 +99,11 @@ ncu --set full -o kernels ./build/examples/<program>
 
 ```
 include/flashgrad/   public headers
-  core/              error handling, dtype, device, storage, tensor
-  cuda/              CUDA runtime helpers, error checks, timers
+  autograd/          grad mode, graph nodes
+  core/              error handling, dtype, device, storage, tensor, ops
+  cuda/              CUDA runtime helpers, error checks, timers, allocator
 src/
+  autograd/          recording, backward engine
   core/              core implementation
   cpu/               host-side copy/fill for CPU tensors
   cuda/              CUDA kernels (.cu)
@@ -97,9 +116,9 @@ benchmarks/          kernel benchmarks
 
 - [x] Phase 0 — build system, error handling, CUDA helpers, tests
 - [x] Phase 1 — Tensor core (storage, strides, views, host/device copies)
-- [ ] Phase 2 — CUDA kernels (elementwise, reductions, matmul, softmax)
-- [ ] Phase 3 — caching allocator
-- [ ] Phase 4 — autograd
+- [x] Phase 2 — CUDA kernels (elementwise, reductions, matmul, softmax)
+- [x] Phase 3 — caching allocator
+- [x] Phase 4 — autograd
 - [ ] Phase 5 — `nn` modules
 - [ ] Phase 6 — optimizers, data loading (MNIST)
 - [ ] Phase 7 — Conv2d, fused kernels (CIFAR-10)

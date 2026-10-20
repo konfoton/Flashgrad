@@ -55,6 +55,7 @@ endif()
 # Library
 # ---------------------------------------------------------------------------
 add_library(flashgrad
+  src/autograd/grad_mode.cpp
   src/core/allocator.cpp
   src/core/device.cpp
   src/core/dtype.cpp

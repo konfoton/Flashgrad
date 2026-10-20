@@ -10,6 +10,7 @@ set(BUILD_GMOCK OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(googletest)
 
 add_executable(flashgrad_tests
+  autograd/test_grad_mode.cpp
   core/test_dtype_device.cpp
   core/test_error.cpp
   core/test_shape.cpp

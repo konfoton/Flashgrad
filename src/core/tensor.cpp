@@ -288,7 +288,11 @@ Tensor Tensor::unsqueeze(std::int64_t d) const {
   const std::int64_t new_stride = pos < dim() ? shape()[pos] * strides()[pos] : 1;
   new_shape.insert(new_shape.begin() + pos, 1);
   new_strides.insert(new_strides.begin() + pos, new_stride);
-  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "unsqueeze", {*this}, [pos](const Tensor& g) { return Grads{g.squeeze(pos)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::squeeze() const {
@@ -299,7 +303,12 @@ Tensor Tensor::squeeze() const {
     new_shape.push_back(shape()[d]);
     new_strides.push_back(strides()[d]);
   }
-  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "squeeze", {*this},
+           [shape = shape()](const Tensor& g) { return Grads{g.reshape(shape)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::squeeze(std::int64_t d) const {
@@ -309,7 +318,11 @@ Tensor Tensor::squeeze(std::int64_t d) const {
   Strides new_strides = strides();
   new_shape.erase(new_shape.begin() + pos);
   new_strides.erase(new_strides.begin() + pos);
-  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "squeeze", {*this}, [pos](const Tensor& g) { return Grads{g.unsqueeze(pos)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::expand(const Shape& target) const {

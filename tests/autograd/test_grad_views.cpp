@@ -109,4 +109,20 @@ TEST(ViewGrads, PermuteTransposeT) {
         ref::random_cuda(matrix, 21));
 }
 
+// ---- Size-1 dimensions ----------------------------------------------------------------
+
+TEST(ViewGrads, SqueezeUnsqueeze) {
+  SKIP_IF_NO_CUDA();
+  // Adding or removing size-1 dims keeps the row-major order.
+  const Tensor a = ref::random_cuda({2, 1, 3, 1}, 30);
+  check([](const Tensor& t) { return t.squeeze(); }, same_values, a);
+  check([](const Tensor& t) { return t.squeeze(1); }, same_values, a);
+  check([](const Tensor& t) { return t.squeeze(-1); }, same_values, a);
+  check([](const Tensor& t) { return t.squeeze(0); }, same_values, a);  // size 2: unchanged
+  check([](const Tensor& t) { return t.unsqueeze(0); }, same_values, a);
+  check([](const Tensor& t) { return t.unsqueeze(4); }, same_values, a);
+  check([](const Tensor& t) { return t.unsqueeze(-2).squeeze(); }, same_values,
+        ref::random_cuda({5, 2}, 31).t());
+}
+
 }  // namespace

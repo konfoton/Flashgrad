@@ -103,7 +103,8 @@ class Tensor {
   const Tensor& copy_(const Tensor& src) const;
   const Tensor& fill_(double value) const;  // value is rounded to float
   const Tensor& zero_() const { return fill_(0.0); }
-  // Elementwise in-place arithmetic; `other` must broadcast to shape().
+  // Elementwise in-place arithmetic on CUDA tensors; `other` must broadcast to shape().
+  // Computed into a new tensor, then copied back.
   const Tensor& add_(const Tensor& other) const;
   const Tensor& sub_(const Tensor& other) const;
   const Tensor& mul_(const Tensor& other) const;

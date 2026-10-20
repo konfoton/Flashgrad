@@ -213,6 +213,52 @@ TEST(Operators, ComposeIntoExpressions) {
   EXPECT_TRUE(ref::close(out.to_vector(), expected));
 }
 
+// ---- In-place arithmetic --------------------------------------------------------------
+
+TEST(InPlaceOps, MatchOutOfPlaceOps) {
+  SKIP_IF_NO_CUDA();
+  const Tensor b = ref::random_cuda({4}, 54);
+  const auto check = [&](auto in_place, Tensor (*op)(const Tensor&, const Tensor&)) {
+    const Tensor a = ref::random_cuda({3, 4}, 55);
+    const Tensor expected = op(a, b);
+    const float* data = a.data_ptr();
+    EXPECT_TRUE(in_place(a).is_same(a));
+    EXPECT_EQ(a.data_ptr(), data);  // same memory
+    EXPECT_TRUE(ref::close(a.to_vector(), expected.to_vector()));
+  };
+  check([&](const Tensor& a) -> const Tensor& { return a.add_(b); }, fg::add);
+  check([&](const Tensor& a) -> const Tensor& { return a.sub_(b); }, fg::sub);
+  check([&](const Tensor& a) -> const Tensor& { return a.mul_(b); }, fg::mul);
+  check([&](const Tensor& a) -> const Tensor& { return a.div_(b); }, fg::div);
+}
+
+TEST(InPlaceOps, ScalarOperands) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = ref::random_cuda({5}, 56);
+  const std::vector<float> av = a.to_vector();
+  a.add_(1.0).mul_(3.0).sub_(0.5).div_(2.0);
+  std::vector<float> expected(av.size());
+  for (std::size_t i = 0; i < av.size(); ++i) expected[i] = ((av[i] + 1.0f) * 3.0f - 0.5f) / 2.0f;
+  EXPECT_TRUE(ref::close(a.to_vector(), expected));
+}
+
+TEST(InPlaceOps, NonContiguousTarget) {
+  SKIP_IF_NO_CUDA();
+  const Tensor m = fg::zeros({3, 4}, {.device = fg::Device::cuda()});
+  m.t().add_(fg::tensor({1, 2, 3}).cuda());  // [4, 3] += [3]: column j of m gets j + 1
+  m.slice(1, 0, 4, 2).mul_(10.0);
+  EXPECT_EQ(m.to_vector(), (std::vector<float>{10, 1, 10, 1, 20, 2, 20, 2, 30, 3, 30, 3}));
+}
+
+TEST(InPlaceOps, RejectsInvalidOperands) {
+  SKIP_IF_NO_CUDA();
+  const fg::TensorOptions gpu{.device = fg::Device::cuda()};
+  EXPECT_THROW(fg::ones({3}, gpu).add_(fg::ones({2, 3}, gpu)), fg::Error);  // would grow
+  EXPECT_THROW(fg::ones({3}, gpu).add_(Tensor()), fg::Error);
+  EXPECT_THROW(fg::ones({3}).add_(1.0), fg::Error);  // no math on the CPU
+  EXPECT_THROW(fg::ones({1}, gpu).expand({3}).add_(1.0), fg::Error);  // overlapping elements
+}
+
 // ---- Errors ---------------------------------------------------------------------------
 
 TEST(OpsErrors, RejectsCpuTensors) {

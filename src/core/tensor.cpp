@@ -11,6 +11,7 @@
 #include "cpu/ops.h"
 #include "cuda/memory.h"
 #include "cuda/ops.h"
+#include "flashgrad/core/ops.h"
 
 namespace flashgrad {
 
@@ -400,6 +401,41 @@ const Tensor& Tensor::fill_(double value) const {
   }
   return *this;
 }
+
+namespace {
+
+// this = f(this, other), computed out of place and copied back; `other` must broadcast to
+// the shape of `self`.
+template <typename F>
+const Tensor& apply_in_place(const Tensor& self, const Tensor& other, const char* op, F f) {
+  detail::check_defined(op, self);
+  detail::check_defined(op, other);
+  FG_CHECK(broadcast_shapes(other.shape(), self.shape(), op) == self.shape(), op,
+           ": cannot broadcast ", describe(other), " to ", describe(self));
+  self.copy_(f(self, other));
+  return self;
+}
+
+Tensor scalar_for(const Tensor& self, double value) { return full({}, value, self.options()); }
+
+}  // namespace
+
+const Tensor& Tensor::add_(const Tensor& other) const {
+  return apply_in_place(*this, other, "add_", flashgrad::add);
+}
+const Tensor& Tensor::sub_(const Tensor& other) const {
+  return apply_in_place(*this, other, "sub_", flashgrad::sub);
+}
+const Tensor& Tensor::mul_(const Tensor& other) const {
+  return apply_in_place(*this, other, "mul_", flashgrad::mul);
+}
+const Tensor& Tensor::div_(const Tensor& other) const {
+  return apply_in_place(*this, other, "div_", flashgrad::div);
+}
+const Tensor& Tensor::add_(double other) const { return add_(scalar_for(*this, other)); }
+const Tensor& Tensor::sub_(double other) const { return sub_(scalar_for(*this, other)); }
+const Tensor& Tensor::mul_(double other) const { return mul_(scalar_for(*this, other)); }
+const Tensor& Tensor::div_(double other) const { return div_(scalar_for(*this, other)); }
 
 std::string describe(const Tensor& t) {
   if (!t.defined()) return "Tensor(undefined)";

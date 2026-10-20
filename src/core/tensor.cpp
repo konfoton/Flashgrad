@@ -348,7 +348,13 @@ Tensor Tensor::expand(const Shape& target) const {
     new_shape[d] = want;
     new_strides[d] = want == current ? strides()[d - lead] : 0;
   }
-  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  // Every element is read once per copy, so the copies' gradients are summed.
+  if (needs_grad({*this})) {
+    record(out, "expand", {*this},
+           [shape = shape()](const Tensor& g) { return Grads{sum_to(g, shape)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::slice(std::int64_t d, std::int64_t start, std::int64_t end,

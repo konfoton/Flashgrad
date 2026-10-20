@@ -125,4 +125,29 @@ TEST(ViewGrads, SqueezeUnsqueeze) {
         ref::random_cuda({5, 2}, 31).t());
 }
 
+// ---- Broadcasting ---------------------------------------------------------------------
+
+TEST(ViewGrads, Expand) {
+  SKIP_IF_NO_CUDA();
+  const auto expanded = [](Shape from, Shape to) {
+    return [from, to](const std::vector<Values>& in) {
+      // Stride 0 for new and stretched dims, the row-major stride otherwise.
+      const std::vector<std::int64_t> from_strides = ref::row_major_strides(from);
+      const std::size_t lead = to.size() - from.size();
+      std::vector<std::int64_t> strides(to.size(), 0);
+      for (std::size_t d = lead; d < to.size(); ++d) {
+        if (from[d - lead] == to[d]) strides[d] = from_strides[d - lead];
+      }
+      return ref::gather(in[0], to, strides);
+    };
+  };
+  check([](const Tensor& t) { return t.expand({4, 3}); }, expanded({1, 3}, {4, 3}),
+        ref::random_cuda({1, 3}, 40));
+  check([](const Tensor& t) { return t.expand({2, 3, 4}); }, expanded({3, 1}, {2, 3, 4}),
+        ref::random_cuda({3, 1}, 41));
+  check([](const Tensor& t) { return t.expand({5}); }, expanded({}, {5}), ref::random_cuda({}, 42));
+  check([](const Tensor& t) { return t.expand({2, -1}); }, expanded({3}, {2, 3}),
+        ref::random_cuda({3}, 43));
+}
+
 }  // namespace

@@ -67,7 +67,9 @@ TEST_P(UnaryGrads, MatchFiniteDifferences) {
 INSTANTIATE_TEST_SUITE_P(
     Ops, UnaryGrads,
     ::testing::Values(UnaryGradCase{"neg", fg::neg, [](double x) { return -x; }},
-                      UnaryGradCase{"exp", fg::exp, [](double x) { return std::exp(x); }}),
+                      UnaryGradCase{"exp", fg::exp, [](double x) { return std::exp(x); }},
+                      UnaryGradCase{"log", fg::log, [](double x) { return std::log(x); },
+                                    [](float v) { return std::abs(v) + 0.5f; }}),
     [](const auto& test) { return test.param.name; });
 
 // ---- Binary ---------------------------------------------------------------------------

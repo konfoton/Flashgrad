@@ -181,8 +181,16 @@ Tensor maximum(const Tensor& a, const Tensor& b) {
 Tensor lt(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Lt, "lt", a, b); }
 Tensor eq(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Eq, "eq", a, b); }
 
+// Every element of a row contributes once, so the gradient is g broadcast back along `dim`.
 Tensor sum(const Tensor& a, std::int64_t dim, bool keepdim) {
-  return reduce(ReduceOp::Sum, "sum", a, dim, keepdim);
+  Tensor out = reduce(ReduceOp::Sum, "sum", a, dim, keepdim);
+  if (needs_grad({a})) {
+    const std::int64_t d = normalize_dim(dim, a.dim(), "sum");
+    record(out, "sum", {a}, [shape = a.shape(), d, keepdim](const Tensor& g) {
+      return Grads{(keepdim ? g : g.unsqueeze(d)).expand(shape)};
+    });
+  }
+  return out;
 }
 Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim) {
   return reduce(ReduceOp::Prod, "prod", a, dim, keepdim);

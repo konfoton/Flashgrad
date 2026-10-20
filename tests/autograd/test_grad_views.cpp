@@ -4,6 +4,8 @@
 #include <functional>
 #include <vector>
 
+#include "flashgrad/autograd/grad_mode.h"
+#include "flashgrad/core/error.h"
 #include "flashgrad/core/ops.h"
 #include "flashgrad/core/tensor.h"
 #include "flashgrad/cuda/runtime.h"
@@ -174,6 +176,14 @@ TEST(ViewGrads, OverlappingSlicesAccumulate) {
   const Tensor x = fg::zeros({4, 2}, {.device = fg::Device::cuda()}).requires_grad_();
   fg::sum(x.slice(0, 0, 3) + x.slice(0, 1, 4)).backward();
   EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{1, 1, 2, 2, 2, 2, 1, 1}));
+}
+
+TEST(ViewGrads, AsStridedIsNotDifferentiable) {
+  const Tensor x = fg::zeros({4}).requires_grad_();
+  EXPECT_THROW(x.as_strided({2}, {2}, 0), fg::Error);
+  EXPECT_NO_THROW(x.detach().as_strided({2}, {2}, 0));
+  const fg::NoGradGuard no_grad;
+  EXPECT_FALSE(x.as_strided({2}, {2}, 0).requires_grad());
 }
 
 }  // namespace

@@ -70,6 +70,7 @@ class Tensor {
   std::vector<float> to_vector() const;
 
   // ---- Views (share storage, never copy) ---------------------------------------------
+  // Not differentiable: throws for a tensor that requires grad (with grad mode on).
   Tensor as_strided(Shape shape, Strides strides, std::int64_t offset) const;
   // One dimension may be -1 and is inferred. Throws if the strides don't allow a view.
   Tensor view(Shape shape) const;

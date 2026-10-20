@@ -197,7 +197,10 @@ std::vector<float> Tensor::to_vector() const {
 
 // ---- Views -----------------------------------------------------------------------------
 
+// An arbitrary view can make elements overlap or skip some, so it has no general gradient.
 Tensor Tensor::as_strided(Shape new_shape, Strides new_strides, std::int64_t new_offset) const {
+  FG_CHECK(!needs_grad({*this}), "as_strided: not differentiable, got ", describe(*this),
+           " that requires grad; use the view ops or detach()");
   return make_view(*this, std::move(new_shape), std::move(new_strides), new_offset);
 }
 

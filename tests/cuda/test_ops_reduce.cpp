@@ -211,6 +211,64 @@ TEST(MeanDim, EmptyDimensionGivesNan) {
   for (const float v : out.to_vector()) EXPECT_TRUE(std::isnan(v));
 }
 
+// ---- sum_to ---------------------------------------------------------------------------
+
+// The reference: every element of `a` is added to the element of `shape` it broadcast from.
+std::vector<float> ref_sum_to(const Tensor& a, const Shape& shape) {
+  const std::vector<float> values = a.to_vector();
+  std::vector<double> out(static_cast<std::size_t>(ref::count(shape)), 0.0);
+  const auto out_strides = ref::row_major_strides(shape);
+  const auto ndim = static_cast<std::int64_t>(a.dim());
+  const auto lead = ndim - static_cast<std::int64_t>(shape.size());
+  for (std::int64_t i = 0; i < a.numel(); ++i) {
+    std::int64_t rest = i, at = 0;
+    for (std::int64_t d = ndim - 1; d >= 0; --d) {
+      const std::int64_t pos = rest % a.size(d);
+      rest /= a.size(d);
+      if (d >= lead && shape[d - lead] != 1) at += pos * out_strides[d - lead];
+    }
+    out[static_cast<std::size_t>(at)] += values[static_cast<std::size_t>(i)];
+  }
+  return std::vector<float>(out.begin(), out.end());
+}
+
+TEST(SumTo, ReducesBroadcastDimensions) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = ref::random_cuda({4, 2, 3}, 60);
+  for (const Shape& shape : {Shape{2, 3}, Shape{2, 1}, Shape{1, 3}, Shape{3}, Shape{1},
+                             Shape{}, Shape{1, 1, 1}, Shape{4, 1, 3}, Shape{4, 2, 3}}) {
+    const Tensor out = fg::sum_to(a, shape);
+    EXPECT_EQ(out.shape(), shape);
+    EXPECT_TRUE(ref::close(out.to_vector(), ref_sum_to(a, shape), 1e-6, 1e-6))
+        << "to " << fg::to_string(shape);
+  }
+  EXPECT_TRUE(fg::sum_to(a, a.shape()).is_same(a));  // nothing to sum
+}
+
+TEST(SumTo, UndoesExpand) {
+  SKIP_IF_NO_CUDA();
+  const Tensor bias = ref::random_cuda({5}, 61);
+  const Tensor out = fg::sum_to(bias.expand({3, 5}), {5});
+  std::vector<float> expected = bias.to_vector();
+  for (float& v : expected) v *= 3.0f;
+  EXPECT_TRUE(ref::close(out.to_vector(), expected, 1e-6, 0));
+}
+
+TEST(SumTo, EmptyBroadcastDimension) {
+  SKIP_IF_NO_CUDA();
+  const Tensor out = fg::sum_to(fg::empty({0, 3}, {.device = fg::Device::cuda()}), {1, 3});
+  EXPECT_EQ(out.to_vector(), (std::vector<float>{0, 0, 0}));
+}
+
+TEST(SumTo, RejectsShapesThatDoNotBroadcast) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = fg::ones({2, 3}, {.device = fg::Device::cuda()});
+  EXPECT_THROW(fg::sum_to(a, {2}), fg::Error);
+  EXPECT_THROW(fg::sum_to(a, {4, 2, 3}), fg::Error);  // more dims than `a`
+  EXPECT_THROW(fg::sum_to(a, {2, 3, 1}), fg::Error);
+  EXPECT_THROW(fg::sum_to(fg::ones({2, 3}), {3}), fg::Error);  // CPU
+}
+
 TEST(ReduceOps, RejectsInvalidDims) {
   SKIP_IF_NO_CUDA();
   const Tensor a = fg::ones({2, 3}, {.device = fg::Device::cuda()});

@@ -103,6 +103,21 @@ Tensor mean(const Tensor& a, std::int64_t dim, bool keepdim) {
   return sum(a, dim, keepdim) / static_cast<float>(n);
 }
 
+Tensor sum_to(const Tensor& a, const Shape& shape) {
+  check_input("sum_to", a);
+  FG_CHECK(broadcast_shapes(shape, a.shape(), "sum_to") == a.shape(), "sum_to: ", describe(a),
+           " is not a broadcast of shape ", to_string(shape));
+  Tensor out = a;
+  const auto lead = a.dim() - static_cast<std::int64_t>(shape.size());
+  for (std::int64_t d = 0; d < lead; ++d) out = sum(out, 0);
+  for (std::size_t d = 0; d < shape.size(); ++d) {
+    if (shape[d] == 1 && out.size(static_cast<std::int64_t>(d)) != 1) {
+      out = sum(out, static_cast<std::int64_t>(d), /*keepdim=*/true);
+    }
+  }
+  return out;
+}
+
 Tensor log_softmax(const Tensor& a, std::int64_t dim) {
   check_input("log_softmax", a);
   const std::int64_t d = normalize_dim(dim, a.dim(), "log_softmax");

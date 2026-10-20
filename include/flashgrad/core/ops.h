@@ -33,6 +33,13 @@ Tensor eq(const Tensor& a, const Tensor& b);
 Tensor sum(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim = false);
+// sum / size of the dimension; an empty dimension gives NaN.
+Tensor mean(const Tensor& a, std::int64_t dim, bool keepdim = false);
+
+// ---- Reductions over all elements -----------------------------------------------------
+// 0-dim results, accumulated in float32. An empty tensor sums to 0; its mean is NaN.
+Tensor sum(const Tensor& a);
+Tensor mean(const Tensor& a);
 
 // ---- Softmax -------------------------------------------------------------------------
 // log(softmax(a)) along `dim`, computed as (a - max) - log(sum(exp(a - max))) so large

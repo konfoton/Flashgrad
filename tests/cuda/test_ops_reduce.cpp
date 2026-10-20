@@ -129,12 +129,95 @@ TEST(ReduceOps, MaxPropagatesNan) {
   EXPECT_TRUE(ref::close(fg::max(a, 1).to_vector(), {nan, nan}));
 }
 
+// ---- Over all elements ----------------------------------------------------------------
+
+double ref_sum(const std::vector<float>& values) {
+  double total = 0.0;
+  for (const float v : values) total += v;
+  return total;
+}
+
+// sum and mean of `a` against the reference; float32 partial sums drift with sqrt(n).
+void check_sum_all(const Tensor& a) {
+  const std::vector<float> values = a.to_vector();
+  const double expected = ref_sum(values);
+  const double tol = 1e-6 * std::sqrt(static_cast<double>(values.size()) + 1.0);
+  const Tensor total = fg::sum(a);
+  EXPECT_EQ(total.shape(), Shape{});
+  EXPECT_TRUE(total.device().is_cuda());
+  EXPECT_TRUE(ref::close({total.item()}, {static_cast<float>(expected)}, tol, tol))
+      << fg::describe(a);
+  const auto n = static_cast<double>(values.size());
+  EXPECT_TRUE(ref::close({fg::mean(a).item()}, {static_cast<float>(expected / n)}, tol, tol))
+      << fg::describe(a);
+}
+
+TEST(ReduceAll, SizesAroundBlockAndGridLimits) {
+  SKIP_IF_NO_CUDA();
+  std::uint64_t seed = 30;
+  // One block, several blocks, more elements than the 1024 blocks cover in one pass.
+  for (const std::int64_t n : {1, 31, 256, 257, 5000, 262144, 262145, 3000017}) {
+    check_sum_all(ref::random_cuda({n}, seed++));
+  }
+  check_sum_all(ref::random_cuda({}, seed++));
+  check_sum_all(ref::random_cuda({7, 3, 50}, seed++));
+}
+
+TEST(ReduceAll, NonContiguousInputs) {
+  SKIP_IF_NO_CUDA();
+  check_sum_all(ref::random_cuda({60, 70, 5}, 40).permute({2, 0, 1}).slice(1, 3, 60, 2));
+  check_sum_all(ref::random_cuda({1, 999}, 41).expand({300, 999}));
+}
+
+TEST(ReduceAll, ExactSmallValues) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = fg::tensor({1, 2, 3, 4, 5, 6}, {2, 3}, fg::Device::cuda());
+  EXPECT_EQ(fg::sum(a).item(), 21.0f);
+  EXPECT_EQ(fg::mean(a).item(), 3.5f);
+}
+
+TEST(ReduceAll, EmptyTensor) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = fg::empty({3, 0}, {.device = fg::Device::cuda()});
+  EXPECT_EQ(fg::sum(a).item(), 0.0f);
+  EXPECT_TRUE(std::isnan(fg::mean(a).item()));
+}
+
+TEST(ReduceAll, RejectsCpuTensors) { EXPECT_THROW(fg::sum(fg::ones({3})), fg::Error); }
+
+// ---- mean along a dimension -----------------------------------------------------------
+
+TEST(MeanDim, MatchesSumDividedBySize) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = ref::random_cuda({4, 5, 6}, 50).transpose(0, 2);  // [6, 5, 4]
+  for (const std::int64_t dim : {0, 1, 2, -1}) {
+    const std::int64_t d = dim < 0 ? dim + 3 : dim;
+    std::vector<float> expected = ref::reduce(
+        a.to_vector(), a.shape(), d, [](double x, double y) { return x + y; }, 0.0);
+    for (float& v : expected) v /= static_cast<float>(a.size(d));
+    Shape kept = a.shape();
+    kept[d] = 1;
+    const Tensor out = fg::mean(a, dim, true);
+    EXPECT_EQ(out.shape(), kept);
+    EXPECT_TRUE(ref::close(out.to_vector(), expected, 1e-6, 1e-6)) << "dim " << dim;
+    EXPECT_EQ(fg::mean(a, dim).dim(), 2);
+  }
+}
+
+TEST(MeanDim, EmptyDimensionGivesNan) {
+  SKIP_IF_NO_CUDA();
+  const Tensor out = fg::mean(fg::empty({2, 0}, {.device = fg::Device::cuda()}), 1);
+  EXPECT_EQ(out.shape(), Shape{2});
+  for (const float v : out.to_vector()) EXPECT_TRUE(std::isnan(v));
+}
+
 TEST(ReduceOps, RejectsInvalidDims) {
   SKIP_IF_NO_CUDA();
   const Tensor a = fg::ones({2, 3}, {.device = fg::Device::cuda()});
   EXPECT_THROW(fg::sum(a, 2), fg::Error);
   EXPECT_THROW(fg::sum(a, -3), fg::Error);
   EXPECT_THROW(fg::sum(fg::ones({}, {.device = fg::Device::cuda()}), 0), fg::Error);
+  EXPECT_THROW(fg::mean(a, 2), fg::Error);
 }
 
 }  // namespace

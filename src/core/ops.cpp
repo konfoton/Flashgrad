@@ -88,6 +88,21 @@ Tensor max(const Tensor& a, std::int64_t dim, bool keepdim) {
   return reduce(ReduceOp::Max, "max", a, dim, keepdim);
 }
 
+Tensor sum(const Tensor& a) {
+  check_input("sum", a);
+  Tensor out = empty({}, a.options());
+  cuda::detail::reduce_all(ReduceOp::Sum, out, a);
+  return out;
+}
+
+Tensor mean(const Tensor& a) { return sum(a) / static_cast<float>(a.numel()); }
+
+Tensor mean(const Tensor& a, std::int64_t dim, bool keepdim) {
+  check_input("mean", a);
+  const std::int64_t n = a.size(normalize_dim(dim, a.dim(), "mean"));
+  return sum(a, dim, keepdim) / static_cast<float>(n);
+}
+
 Tensor log_softmax(const Tensor& a, std::int64_t dim) {
   check_input("log_softmax", a);
   const std::int64_t d = normalize_dim(dim, a.dim(), "log_softmax");

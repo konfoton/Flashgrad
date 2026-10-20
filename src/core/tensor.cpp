@@ -370,8 +370,17 @@ Tensor Tensor::slice(std::int64_t d, std::int64_t start, std::int64_t end,
   Strides new_strides = strides();
   new_shape[pos] = (end - start + step - 1) / step;
   new_strides[pos] = strides()[pos] * step;
-  return make_view(*this, std::move(new_shape), std::move(new_strides),
-                    offset() + start * strides()[pos]);
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides),
+                         offset() + start * strides()[pos]);
+  // The gradient lands in the sliced positions of a zero tensor of the input's shape.
+  if (needs_grad({*this})) {
+    record(out, "slice", {*this}, [shape = shape(), pos, start, end, step](const Tensor& g) {
+      const Tensor grad = zeros(shape, g.options());
+      grad.slice(pos, start, end, step).copy_(g);
+      return Grads{grad};
+    });
+  }
+  return out;
 }
 
 Tensor Tensor::select(std::int64_t d, std::int64_t index) const {
@@ -384,8 +393,16 @@ Tensor Tensor::select(std::int64_t d, std::int64_t index) const {
   Strides new_strides = strides();
   new_shape.erase(new_shape.begin() + pos);
   new_strides.erase(new_strides.begin() + pos);
-  return make_view(*this, std::move(new_shape), std::move(new_strides),
-                    offset() + index * strides()[pos]);
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides),
+                         offset() + index * strides()[pos]);
+  if (needs_grad({*this})) {
+    record(out, "select", {*this}, [shape = shape(), pos, index](const Tensor& g) {
+      const Tensor grad = zeros(shape, g.options());
+      grad.select(pos, index).copy_(g);
+      return Grads{grad};
+    });
+  }
+  return out;
 }
 
 // ---- Copies and conversions --------------------------------------------------------------

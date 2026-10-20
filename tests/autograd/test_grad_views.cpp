@@ -150,4 +150,30 @@ TEST(ViewGrads, Expand) {
         ref::random_cuda({3}, 43));
 }
 
+// ---- Indexing -------------------------------------------------------------------------
+
+TEST(ViewGrads, SliceSelectIndex) {
+  SKIP_IF_NO_CUDA();
+  const Shape shape{4, 6};  // row-major strides [6, 1]
+  const Tensor a = ref::random_cuda(shape, 50);
+  const auto view_of = [](Shape out, std::vector<std::int64_t> strides, std::int64_t offset) {
+    return [=](const std::vector<Values>& in) { return ref::gather(in[0], out, strides, offset); };
+  };
+  check([](const Tensor& t) { return t.slice(1, 1, 5); }, view_of({4, 4}, {6, 1}, 1), a);
+  check([](const Tensor& t) { return t.slice(1, 0, 6, 2); }, view_of({4, 3}, {6, 2}, 0), a);
+  check([](const Tensor& t) { return t.slice(0, -3, 100, 2); }, view_of({2, 6}, {12, 1}, 6), a);
+  check([](const Tensor& t) { return t.slice(0, 2, 2); }, view_of({0, 6}, {6, 1}, 12), a);
+  check([](const Tensor& t) { return t.select(1, 4); }, view_of({4}, {6}, 4), a);
+  check([](const Tensor& t) { return t.select(0, -1); }, view_of({6}, {1}, 18), a);
+  check([](const Tensor& t) { return t[2][3]; }, view_of({}, {}, 15), a);
+}
+
+TEST(ViewGrads, OverlappingSlicesAccumulate) {
+  SKIP_IF_NO_CUDA();
+  // Rows 0-2 and 1-3 overlap in rows 1 and 2, which get both gradients.
+  const Tensor x = fg::zeros({4, 2}, {.device = fg::Device::cuda()}).requires_grad_();
+  fg::sum(x.slice(0, 0, 3) + x.slice(0, 1, 4)).backward();
+  EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{1, 1, 2, 2, 2, 2, 1, 1}));
+}
+
 }  // namespace

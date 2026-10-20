@@ -98,7 +98,8 @@ INSTANTIATE_TEST_SUITE_P(
     Ops, BinaryGrads,
     ::testing::Values(
         BinaryGradCase{"add", fg::add, [](double x, double y) { return x + y; }},
-        BinaryGradCase{"sub", fg::sub, [](double x, double y) { return x - y; }}),
+        BinaryGradCase{"sub", fg::sub, [](double x, double y) { return x - y; }},
+        BinaryGradCase{"mul", fg::mul, [](double x, double y) { return x * y; }}),
     [](const auto& test) { return test.param.name; });
 
 }  // namespace

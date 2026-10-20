@@ -94,7 +94,17 @@ Tensor sub(const Tensor& a, const Tensor& b) {
   }
   return out;
 }
-Tensor mul(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Mul, "mul", a, b); }
+Tensor mul(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Mul, "mul", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "mul", {a, b},
+           [a = a.detach(), b = b.detach(), need_a = a.requires_grad(),
+            need_b = b.requires_grad()](const Tensor& g) {
+             return Grads{need_a ? g * b : Tensor(), need_b ? g * a : Tensor()};
+           });
+  }
+  return out;
+}
 Tensor div(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Div, "div", a, b); }
 Tensor maximum(const Tensor& a, const Tensor& b) {
   return binary(BinaryOp::Maximum, "maximum", a, b);

@@ -125,6 +125,13 @@ void copy_on_device(const Tensor& dst, const Tensor& src) {
   cuda::detail::copy(dst, src);
 }
 
+// A new handle on the storage of `t`, without autograd history. The view ops record their
+// own gradients on top of it.
+Tensor make_view(const Tensor& t, Shape shape, Strides strides, std::int64_t offset) {
+  return Tensor(std::make_shared<TensorImpl>(t.storage(), std::move(shape), std::move(strides),
+                                             offset, t.dtype()));
+}
+
 }  // namespace
 
 Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(std::move(impl)) {}
@@ -191,17 +198,22 @@ std::vector<float> Tensor::to_vector() const {
 // ---- Views -----------------------------------------------------------------------------
 
 Tensor Tensor::as_strided(Shape new_shape, Strides new_strides, std::int64_t new_offset) const {
-  return Tensor(std::make_shared<TensorImpl>(storage(), std::move(new_shape),
-                                             std::move(new_strides), new_offset, dtype()));
+  return make_view(*this, std::move(new_shape), std::move(new_strides), new_offset);
 }
 
+// Same elements in the same row-major order, so the gradient only changes shape.
 Tensor Tensor::view(Shape new_shape) const {
   new_shape = infer_shape(std::move(new_shape), numel(), "view");
   const auto new_strides = compute_view_strides(shape(), strides(), new_shape);
   FG_CHECK(new_strides.has_value(), "view: cannot view ", describe(*this), " with strides ",
            to_string(strides()), " as shape ", to_string(new_shape),
            " without copying; use reshape()");
-  return as_strided(std::move(new_shape), *new_strides, offset());
+  Tensor out = make_view(*this, std::move(new_shape), *new_strides, offset());
+  if (needs_grad({*this})) {
+    record(out, "view", {*this},
+           [shape = shape()](const Tensor& g) { return Grads{g.reshape(shape)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::reshape(Shape new_shape) const {
@@ -237,7 +249,7 @@ Tensor Tensor::permute(const std::vector<std::int64_t>& dims) const {
     new_shape[i] = shape()[d];
     new_strides[i] = strides()[d];
   }
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
 }
 
 Tensor Tensor::transpose(std::int64_t dim0, std::int64_t dim1) const {
@@ -247,7 +259,7 @@ Tensor Tensor::transpose(std::int64_t dim0, std::int64_t dim1) const {
   Strides new_strides = strides();
   std::swap(new_shape[d0], new_shape[d1]);
   std::swap(new_strides[d0], new_strides[d1]);
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
 }
 
 Tensor Tensor::t() const {
@@ -262,7 +274,7 @@ Tensor Tensor::unsqueeze(std::int64_t d) const {
   const std::int64_t new_stride = pos < dim() ? shape()[pos] * strides()[pos] : 1;
   new_shape.insert(new_shape.begin() + pos, 1);
   new_strides.insert(new_strides.begin() + pos, new_stride);
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
 }
 
 Tensor Tensor::squeeze() const {
@@ -273,7 +285,7 @@ Tensor Tensor::squeeze() const {
     new_shape.push_back(shape()[d]);
     new_strides.push_back(strides()[d]);
   }
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
 }
 
 Tensor Tensor::squeeze(std::int64_t d) const {
@@ -283,7 +295,7 @@ Tensor Tensor::squeeze(std::int64_t d) const {
   Strides new_strides = strides();
   new_shape.erase(new_shape.begin() + pos);
   new_strides.erase(new_strides.begin() + pos);
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
 }
 
 Tensor Tensor::expand(const Shape& target) const {
@@ -309,7 +321,7 @@ Tensor Tensor::expand(const Shape& target) const {
     new_shape[d] = want;
     new_strides[d] = want == current ? strides()[d - lead] : 0;
   }
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
 }
 
 Tensor Tensor::slice(std::int64_t d, std::int64_t start, std::int64_t end,
@@ -325,7 +337,7 @@ Tensor Tensor::slice(std::int64_t d, std::int64_t start, std::int64_t end,
   Strides new_strides = strides();
   new_shape[pos] = (end - start + step - 1) / step;
   new_strides[pos] = strides()[pos] * step;
-  return as_strided(std::move(new_shape), std::move(new_strides),
+  return make_view(*this, std::move(new_shape), std::move(new_strides),
                     offset() + start * strides()[pos]);
 }
 
@@ -339,7 +351,7 @@ Tensor Tensor::select(std::int64_t d, std::int64_t index) const {
   Strides new_strides = strides();
   new_shape.erase(new_shape.begin() + pos);
   new_strides.erase(new_strides.begin() + pos);
-  return as_strided(std::move(new_shape), std::move(new_strides),
+  return make_view(*this, std::move(new_shape), std::move(new_strides),
                     offset() + index * strides()[pos]);
 }
 

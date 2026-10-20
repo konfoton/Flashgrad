@@ -145,6 +145,23 @@ inline void fill_view(std::vector<float>& values, const Shape& shape,
   }
 }
 
+// The elements of a view (shape, strides, offset) of the row-major `values`, in row-major
+// order of the view.
+template <typename T>
+std::vector<T> gather(const std::vector<T>& values, const Shape& shape,
+                      const std::vector<std::int64_t>& strides, std::int64_t offset = 0) {
+  const std::vector<std::int64_t> index_strides = row_major_strides(shape);
+  std::vector<T> out(static_cast<std::size_t>(count(shape)));
+  for (std::int64_t i = 0; i < count(shape); ++i) {
+    std::int64_t at = offset;
+    for (std::size_t d = 0; d < shape.size(); ++d) {
+      at += i / index_strides[d] % shape[d] * strides[d];
+    }
+    out[static_cast<std::size_t>(i)] = values[static_cast<std::size_t>(at)];
+  }
+  return out;
+}
+
 // ---- Helpers --------------------------------------------------------------------------
 
 // A random CUDA tensor; each standard normal value is passed through `transform` first.

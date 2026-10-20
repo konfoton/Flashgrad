@@ -58,4 +58,20 @@ TEST(ViewGrads, ToMovesTheGradientBack) {
   check([](const Tensor& t) { return t.cpu().cuda(); }, same_values, gpu_leaf);
 }
 
+// ---- Reshaping ------------------------------------------------------------------------
+
+TEST(ViewGrads, ViewReshapeFlatten) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = ref::random_cuda({2, 3, 4}, 10);
+  // Row-major order is unchanged, so every reference is the identity.
+  check([](const Tensor& t) { return t.view({6, 4}); }, same_values, a);
+  check([](const Tensor& t) { return t.view({-1}); }, same_values, a);
+  check([](const Tensor& t) { return t.reshape({4, 3, 2}); }, same_values, a);
+  check([](const Tensor& t) { return t.flatten(1); }, same_values, a);
+  check([](const Tensor& t) { return t.flatten(); }, same_values, ref::random_cuda({}, 11));
+  // A non-contiguous input: reshape copies, then views the copy.
+  check([](const Tensor& t) { return t.reshape({-1}); }, same_values,
+        ref::random_cuda({4, 5}, 12).t());
+}
+
 }  // namespace

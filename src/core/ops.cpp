@@ -79,7 +79,14 @@ Tensor neg(const Tensor& a) {
 }
 
 Tensor relu(const Tensor& a) { return unary(UnaryOp::Relu, "relu", a); }
-Tensor exp(const Tensor& a) { return unary(UnaryOp::Exp, "exp", a); }
+Tensor exp(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Exp, "exp", a);
+  if (needs_grad({a})) {
+    record(out, "exp", {a}, [out = out.detach()](const Tensor& g) { return Grads{g * out}; });
+  }
+  return out;
+}
+
 Tensor log(const Tensor& a) { return unary(UnaryOp::Log, "log", a); }
 Tensor sigmoid(const Tensor& a) { return unary(UnaryOp::Sigmoid, "sigmoid", a); }
 Tensor reciprocal(const Tensor& a) { return unary(UnaryOp::Reciprocal, "reciprocal", a); }

@@ -23,6 +23,11 @@ enum class UnaryOp { Neg, Relu, Exp, Log, Sigmoid, Reciprocal };
 enum class BinaryOp { Add, Sub, Mul, Div, Maximum, Lt, Eq };
 enum class ReduceOp { Sum, Prod, Max };
 
+// Sets every element of `out` to `value`. Unlike the other launchers, `out` may be any
+// existing tensor or view, including one with expanded (stride 0) dims, and may have more
+// than kMaxDims dimensions if it is contiguous.
+void fill(const Tensor& out, float value, Stream stream = nullptr);
+
 // out = op(a); `a` has the shape of `out`.
 void unary(UnaryOp op, const Tensor& out, const Tensor& a, Stream stream = nullptr);
 

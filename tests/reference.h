@@ -124,6 +124,19 @@ inline std::vector<float> log_softmax(const std::vector<float>& a, const Shape& 
   return out;
 }
 
+// Sets the elements of a view (shape, strides, offset) of the storage `values` to `value`.
+inline void fill_view(std::vector<float>& values, const Shape& shape,
+                      const std::vector<std::int64_t>& strides, std::int64_t offset, float value) {
+  const std::vector<std::int64_t> index_strides = row_major_strides(shape);
+  for (std::int64_t i = 0; i < count(shape); ++i) {
+    std::int64_t at = offset;
+    for (std::size_t d = 0; d < shape.size(); ++d) {
+      at += i / index_strides[d] % shape[d] * strides[d];
+    }
+    values[static_cast<std::size_t>(at)] = value;
+  }
+}
+
 // ---- Helpers --------------------------------------------------------------------------
 
 // A random CUDA tensor; each standard normal value is passed through `transform` first.

@@ -17,6 +17,7 @@ add_executable(flashgrad_tests
   core/test_views.cpp
   cuda/test_caching_allocator.cpp
   cuda/test_ops_elementwise.cpp
+  cuda/test_ops_fill.cpp
   cuda/test_ops_matmul.cpp
   cuda/test_ops_reduce.cpp
   cuda/test_ops_softmax.cpp

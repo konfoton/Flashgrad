@@ -10,6 +10,7 @@
 #include "core/checks.h"
 #include "cpu/ops.h"
 #include "cuda/memory.h"
+#include "cuda/ops.h"
 
 namespace flashgrad {
 
@@ -375,7 +376,10 @@ const Tensor& Tensor::fill_(double value) const {
   if (device().is_cpu()) {
     cpu::fill(*this, value);
   } else {
-    copy_(full({}, value, {.dtype = dtype(), .device = Device::cpu()}));
+    FG_CHECK(is_contiguous() || dim() <= cuda::detail::kMaxDims, "fill_: at most ",
+             cuda::detail::kMaxDims, " dimensions are supported for non-contiguous CUDA ",
+             "tensors, got ", describe(*this), " with strides ", to_string(strides()));
+    cuda::detail::fill(*this, static_cast<float>(value));
   }
   return *this;
 }

@@ -1,0 +1,104 @@
+#include <gtest/gtest.h>
+
+#include <cmath>
+#include <cstdint>
+#include <functional>
+#include <ostream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "flashgrad/core/ops.h"
+#include "flashgrad/core/tensor.h"
+#include "flashgrad/cuda/runtime.h"
+#include "gradcheck.h"
+#include "reference.h"
+
+// Gradients of the elementwise ops, checked against finite differences of the references.
+namespace {
+
+#define SKIP_IF_NO_CUDA() \
+  if (!flashgrad::cuda::is_available()) GTEST_SKIP() << "no CUDA device available"
+
+namespace fg = flashgrad;
+using fg::Shape;
+using fg::Tensor;
+using gradcheck::Values;
+
+using Transform = std::function<float(float)>;
+
+float identity(float v) { return v; }
+
+// ---- Binary ---------------------------------------------------------------------------
+
+struct BinaryGradCase {
+  std::string name;
+  Tensor (*op)(const Tensor&, const Tensor&);
+  double (*reference)(double, double);
+  Transform input = identity;  // keeps inputs inside the op's domain and away from kinks
+};
+
+void PrintTo(const BinaryGradCase& c, std::ostream* os) { *os << c.name; }
+
+class BinaryGrads : public ::testing::TestWithParam<BinaryGradCase> {
+ protected:
+  void check(const Tensor& a, const Tensor& b, const gradcheck::Options& options = {}) const {
+    const BinaryGradCase& c = GetParam();
+    const Shape as = a.shape(), bs = b.shape();
+    const Shape os = fg::broadcast_shapes(as, bs);
+    const auto reference = [&](const std::vector<Values>& in) {
+      return ref::binary(in[0], as, in[1], bs, os, c.reference);
+    };
+    const auto op = [&](const std::vector<Tensor>& in) { return c.op(in[0], in[1]); };
+    EXPECT_TRUE(gradcheck::check(op, reference, {a, b}, options))
+        << c.name << " of " << fg::describe(a) << " and " << fg::describe(b);
+  }
+};
+
+TEST_P(BinaryGrads, SameShape) {
+  SKIP_IF_NO_CUDA();
+  const Transform& t = GetParam().input;
+  check(ref::random_cuda({3, 4}, 1, t), ref::random_cuda({3, 4}, 2, t));
+  check(ref::random_cuda({}, 3, t), ref::random_cuda({}, 4, t));
+}
+
+TEST_P(BinaryGrads, Broadcasting) {
+  SKIP_IF_NO_CUDA();
+  const Transform& t = GetParam().input;
+  const std::vector<std::pair<Shape, Shape>> shapes = {
+      {{2, 3, 4}, {4}}, {{3, 1}, {1, 4}}, {{}, {2, 3}}, {{2, 3}, {}}, {{5, 1, 2}, {3, 1}}};
+  std::uint64_t seed = 10;
+  for (const auto& [as, bs] : shapes) {
+    check(ref::random_cuda(as, seed, t), ref::random_cuda(bs, seed + 1, t));
+    seed += 2;
+  }
+}
+
+TEST_P(BinaryGrads, NonContiguousInputs) {
+  SKIP_IF_NO_CUDA();
+  const Transform& t = GetParam().input;
+  check(ref::random_cuda({4, 3}, 20, t).t(), ref::random_cuda({3, 8}, 21, t).slice(1, 0, 8, 2));
+}
+
+TEST_P(BinaryGrads, OnlyOneInputRequiresGrad) {
+  SKIP_IF_NO_CUDA();
+  const Transform& t = GetParam().input;
+  const Tensor a = ref::random_cuda({2, 3}, 30, t), b = ref::random_cuda({3}, 31, t);
+  check(a, b, {.requires_grad = {true, false}});
+  check(a, b, {.requires_grad = {false, true}});
+}
+
+TEST_P(BinaryGrads, EmptyInputs) {
+  SKIP_IF_NO_CUDA();
+  const Transform& t = GetParam().input;
+  check(ref::random_cuda({0, 3}, 40, t), ref::random_cuda({3}, 41, t));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Ops, BinaryGrads,
+    ::testing::Values(
+        BinaryGradCase{"add", fg::add, [](double x, double y) { return x + y; }},
+        BinaryGradCase{"sub", fg::sub, [](double x, double y) { return x - y; }}),
+    [](const auto& test) { return test.param.name; });
+
+}  // namespace

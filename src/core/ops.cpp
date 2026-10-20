@@ -1,9 +1,12 @@
 #include "flashgrad/core/ops.h"
 
 #include <cstdint>
+#include <vector>
 
+#include "autograd/function.h"
 #include "core/checks.h"
 #include "cuda/ops.h"
+#include "flashgrad/autograd/grad_mode.h"
 #include "flashgrad/core/error.h"
 #include "flashgrad/core/shape.h"
 
@@ -11,10 +14,13 @@ namespace flashgrad {
 
 namespace {
 
+using autograd::detail::needs_grad;
+using autograd::detail::record;
 using cuda::detail::BinaryOp;
 using cuda::detail::kMaxDims;
 using cuda::detail::ReduceOp;
 using cuda::detail::UnaryOp;
+using Grads = std::vector<Tensor>;
 
 void check_input(const char* op, const Tensor& t) {
   detail::check_defined(op, t);
@@ -38,6 +44,7 @@ Tensor binary(BinaryOp kind, const char* op, const Tensor& a, const Tensor& b) {
            " and ", describe(b));
   const Shape shape = broadcast_shapes(a.shape(), b.shape(), op);
   Tensor out = empty(shape, a.options());
+  const NoGradGuard no_grad;  // the expanded operands are internal, not part of the graph
   cuda::detail::binary(kind, out, a.expand(shape), b.expand(shape));
   return out;
 }
@@ -68,8 +75,25 @@ Tensor log(const Tensor& a) { return unary(UnaryOp::Log, "log", a); }
 Tensor sigmoid(const Tensor& a) { return unary(UnaryOp::Sigmoid, "sigmoid", a); }
 Tensor reciprocal(const Tensor& a) { return unary(UnaryOp::Reciprocal, "reciprocal", a); }
 
-Tensor add(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Add, "add", a, b); }
-Tensor sub(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Sub, "sub", a, b); }
+// Each differentiable op computes its output, then records how to get the inputs' gradients
+// from the output's gradient g (see autograd/function.h). Gradients may keep the broadcast
+// shape of the output; the engine sums them back to each input's shape.
+
+Tensor add(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Add, "add", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "add", {a, b}, [](const Tensor& g) { return Grads{g, g}; });
+  }
+  return out;
+}
+
+Tensor sub(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Sub, "sub", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "sub", {a, b}, [](const Tensor& g) { return Grads{g, -g}; });
+  }
+  return out;
+}
 Tensor mul(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Mul, "mul", a, b); }
 Tensor div(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Div, "div", a, b); }
 Tensor maximum(const Tensor& a, const Tensor& b) {

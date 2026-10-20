@@ -236,11 +236,13 @@ Tensor Tensor::flatten(std::int64_t start_dim, std::int64_t end_dim) const {
   return reshape(std::move(new_shape));
 }
 
+// The gradient goes back through the inverse permutation.
 Tensor Tensor::permute(const std::vector<std::int64_t>& dims) const {
   FG_CHECK(static_cast<std::int64_t>(dims.size()) == dim(), "permute: got ", dims.size(), " dims ",
            to_string(dims), " for ", describe(*this));
   Shape new_shape(dims.size());
   Strides new_strides(dims.size());
+  std::vector<std::int64_t> inverse(dims.size());
   std::vector<bool> seen(dims.size(), false);
   for (std::size_t i = 0; i < dims.size(); ++i) {
     const std::int64_t d = normalize_dim(dims[i], dim(), "permute");
@@ -248,10 +250,17 @@ Tensor Tensor::permute(const std::vector<std::int64_t>& dims) const {
     seen[d] = true;
     new_shape[i] = shape()[d];
     new_strides[i] = strides()[d];
+    inverse[d] = static_cast<std::int64_t>(i);
   }
-  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "permute", {*this},
+           [inverse](const Tensor& g) { return Grads{g.permute(inverse)}; });
+  }
+  return out;
 }
 
+// Swapping the same two dims again undoes the transpose.
 Tensor Tensor::transpose(std::int64_t dim0, std::int64_t dim1) const {
   const std::int64_t d0 = normalize_dim(dim0, dim(), "transpose");
   const std::int64_t d1 = normalize_dim(dim1, dim(), "transpose");
@@ -259,7 +268,12 @@ Tensor Tensor::transpose(std::int64_t dim0, std::int64_t dim1) const {
   Strides new_strides = strides();
   std::swap(new_shape[d0], new_shape[d1]);
   std::swap(new_strides[d0], new_strides[d1]);
-  return make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "transpose", {*this},
+           [d0, d1](const Tensor& g) { return Grads{g.transpose(d0, d1)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::t() const {

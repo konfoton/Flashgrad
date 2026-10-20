@@ -74,4 +74,39 @@ TEST(ViewGrads, ViewReshapeFlatten) {
         ref::random_cuda({4, 5}, 12).t());
 }
 
+// ---- Permutations ---------------------------------------------------------------------
+
+// The row-major strides of `shape`, reordered by `dims`.
+std::vector<std::int64_t> permuted_strides(const Shape& shape,
+                                           const std::vector<std::int64_t>& dims) {
+  const std::vector<std::int64_t> strides = ref::row_major_strides(shape);
+  std::vector<std::int64_t> out;
+  for (const std::int64_t d : dims) out.push_back(strides[static_cast<std::size_t>(d)]);
+  return out;
+}
+
+TEST(ViewGrads, PermuteTransposeT) {
+  SKIP_IF_NO_CUDA();
+  const Shape shape{2, 3, 4};
+  const Tensor a = ref::random_cuda(shape, 20);
+  const auto permuted = [&](std::vector<std::int64_t> dims) {
+    return [shape, dims](const std::vector<Values>& in) {
+      Shape out_shape;
+      for (const std::int64_t d : dims) out_shape.push_back(shape[static_cast<std::size_t>(d)]);
+      return ref::gather(in[0], out_shape, permuted_strides(shape, dims));
+    };
+  };
+  check([](const Tensor& t) { return t.permute({2, 0, 1}); }, permuted({2, 0, 1}), a);
+  check([](const Tensor& t) { return t.permute({1, 2, 0}); }, permuted({1, 2, 0}), a);
+  check([](const Tensor& t) { return t.transpose(0, 2); }, permuted({2, 1, 0}), a);
+  check([](const Tensor& t) { return t.transpose(-1, 1); }, permuted({0, 2, 1}), a);
+
+  const Shape matrix{3, 5};
+  check([](const Tensor& t) { return t.t(); },
+        [&](const std::vector<Values>& in) {
+          return ref::gather(in[0], {5, 3}, permuted_strides(matrix, {1, 0}));
+        },
+        ref::random_cuda(matrix, 21));
+}
+
 }  // namespace

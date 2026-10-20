@@ -203,6 +203,10 @@ Tensor sum(const Tensor& a) {
   check_input("sum", a);
   Tensor out = empty({}, a.options());
   cuda::detail::reduce_all(ReduceOp::Sum, out, a);
+  if (needs_grad({a})) {
+    record(out, "sum", {a},
+           [shape = a.shape()](const Tensor& g) { return Grads{g.expand(shape)}; });
+  }
   return out;
 }
 

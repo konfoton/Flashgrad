@@ -54,4 +54,64 @@ TEST(ReduceGrads, SumOverAnEmptyDimension) {
   EXPECT_EQ(a.grad().shape(), (Shape{3, 0}));
 }
 
+TEST(ReduceGrads, SumAndMeanOfAllElements) {
+  SKIP_IF_NO_CUDA();
+  for (const Tensor& a : {ref::random_cuda({}, 10), ref::random_cuda({7}, 11),
+                          ref::random_cuda({3, 4, 5}, 12),
+                          ref::random_cuda({6, 4}, 13).t().slice(0, 0, 4, 3)}) {
+    const auto sum_ref = [](const std::vector<Values>& in) {
+      double total = 0.0;
+      for (const double v : in[0]) total += v;
+      return Values{total};
+    };
+    const auto mean_ref = [&](const std::vector<Values>& in) {
+      return Values{sum_ref(in)[0] / static_cast<double>(in[0].size())};
+    };
+    EXPECT_TRUE(gradcheck::check([](const auto& in) { return fg::sum(in[0]); }, sum_ref, {a}))
+        << fg::describe(a);
+    EXPECT_TRUE(gradcheck::check([](const auto& in) { return fg::mean(in[0]); }, mean_ref, {a}))
+        << fg::describe(a);
+  }
+}
+
+TEST(ReduceGrads, MeanAlongEachDimension) {
+  SKIP_IF_NO_CUDA();
+  for (const Tensor& a : inputs()) {
+    for (std::int64_t d = 0; d < a.dim(); ++d) {
+      const auto op = [&](const std::vector<Tensor>& in) { return fg::mean(in[0], d); };
+      const auto reference = [&](const std::vector<Values>& in) {
+        Values out = ref::reduce(in[0], a.shape(), d, add, 0.0);
+        for (double& v : out) v /= static_cast<double>(a.size(d));
+        return out;
+      };
+      EXPECT_TRUE(gradcheck::check(op, reference, {a})) << "dim " << d << " of " << fg::describe(a);
+    }
+  }
+}
+
+TEST(ReduceGrads, ScalarLossBackwardWithoutAGradient) {
+  SKIP_IF_NO_CUDA();
+  // The usual training pattern: a 0-dim loss, backward() without arguments.
+  const Tensor x = ref::random_cuda({2, 5}, 20).requires_grad_();
+  fg::mean(x * x).backward();
+  const std::vector<float> xv = x.to_vector();
+  std::vector<float> expected(xv.size());
+  for (std::size_t i = 0; i < xv.size(); ++i) expected[i] = 2.0f * xv[i] / 10.0f;
+  EXPECT_TRUE(ref::close(x.grad().to_vector(), expected, 1e-6, 1e-7));
+}
+
+TEST(ReduceGrads, SumToIsDifferentiable) {
+  SKIP_IF_NO_CUDA();
+  // Built from sum, so it needs no backward of its own; its gradient is an expand.
+  const Tensor a = ref::random_cuda({4, 2, 3}, 30);
+  const Shape to{2, 1};
+  const auto op = [&](const std::vector<Tensor>& in) { return fg::sum_to(in[0], to); };
+  const auto reference = [&](const std::vector<Values>& in) {
+    Values out(2, 0.0);
+    for (std::size_t i = 0; i < in[0].size(); ++i) out[i / 3 % 2] += in[0][i];
+    return out;
+  };
+  EXPECT_TRUE(gradcheck::check(op, reference, {a}));
+}
+
 }  // namespace

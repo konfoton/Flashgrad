@@ -17,6 +17,10 @@
 
 namespace flashgrad {
 
+namespace autograd {
+class Node;
+}  // namespace autograd
+
 struct TensorOptions {
   DType dtype = DType::Float32;
   Device device = Device::cpu();
@@ -96,6 +100,23 @@ class Tensor {
   Tensor to(Device device) const;  // returns *this when already on `device`
   Tensor cpu() const { return to(Device::cpu()); }
   Tensor cuda(int index = 0) const { return to(Device::cuda(index)); }
+
+  // ---- Autograd ----------------------------------------------------------------------
+  // A leaf is a tensor that wasn't computed by a recorded op: created by the user, or
+  // computed with grad mode off. Leaves that require grad get their gradient in grad()
+  // after backward; outputs of recorded ops always require grad and have a grad_fn.
+  bool requires_grad() const;
+  // Sets requires_grad on a leaf; returns *this, e.g. randn(...).requires_grad_().
+  const Tensor& requires_grad_(bool requires_grad = true) const;
+  bool is_leaf() const;
+  // The node that computed this tensor; null for leaves.
+  std::shared_ptr<autograd::Node> grad_fn() const;
+  // The gradient accumulated by backward (leaves only); undefined before the first backward.
+  Tensor grad() const;
+  // Replaces the gradient; an undefined tensor clears it.
+  void set_grad(const Tensor& grad) const;
+  // The same data without autograd history: a leaf that doesn't require grad.
+  Tensor detach() const;
 
   // ---- In-place ----------------------------------------------------------------------
   // Copies `src` (broadcast to shape()) into this tensor, moving data between devices as

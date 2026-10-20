@@ -78,7 +78,17 @@ Tensor neg(const Tensor& a) {
   return out;
 }
 
-Tensor relu(const Tensor& a) { return unary(UnaryOp::Relu, "relu", a); }
+// The gradient passes where a > 0 and is 0 elsewhere, including at a == 0.
+Tensor relu(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Relu, "relu", a);
+  if (needs_grad({a})) {
+    record(out, "relu", {a}, [a = a.detach()](const Tensor& g) {
+      return Grads{g * lt(zeros({}, a.options()), a)};
+    });
+  }
+  return out;
+}
+
 Tensor exp(const Tensor& a) {
   Tensor out = unary(UnaryOp::Exp, "exp", a);
   if (needs_grad({a})) {

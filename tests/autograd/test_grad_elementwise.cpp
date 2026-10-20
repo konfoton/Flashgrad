@@ -67,10 +67,19 @@ TEST_P(UnaryGrads, MatchFiniteDifferences) {
 INSTANTIATE_TEST_SUITE_P(
     Ops, UnaryGrads,
     ::testing::Values(UnaryGradCase{"neg", fg::neg, [](double x) { return -x; }},
+                      UnaryGradCase{"relu", fg::relu, [](double x) { return x > 0 ? x : 0.0; },
+                                    away_from_zero},
                       UnaryGradCase{"exp", fg::exp, [](double x) { return std::exp(x); }},
                       UnaryGradCase{"log", fg::log, [](double x) { return std::log(x); },
                                     [](float v) { return std::abs(v) + 0.5f; }}),
     [](const auto& test) { return test.param.name; });
+
+TEST(UnaryGrads, ReluGradientIsZeroAtZero) {
+  SKIP_IF_NO_CUDA();
+  const Tensor x = fg::tensor({-1.0f, 0.0f, 2.0f}).cuda().requires_grad_();
+  fg::relu(x).backward(fg::ones({3}, {.device = fg::Device::cuda()}));
+  EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{0, 0, 1}));
+}
 
 // ---- Binary ---------------------------------------------------------------------------
 

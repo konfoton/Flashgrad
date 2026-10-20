@@ -289,6 +289,16 @@ Tensor matmul(const Tensor& a, const Tensor& b) {
            " and ", describe(b));
   Tensor out = empty({a.size(0), b.size(1)}, a.options());
   cuda::detail::matmul(out, a, b);
+  // For out = a @ b: g @ b^T for a and a^T @ g for b. The transposes are views, which the
+  // kernel reads through their strides.
+  if (needs_grad({a, b})) {
+    record(out, "matmul", {a, b},
+           [a = a.detach(), b = b.detach(), need_a = a.requires_grad(),
+            need_b = b.requires_grad()](const Tensor& g) {
+             return Grads{need_a ? matmul(g, b.t()) : Tensor(),
+                          need_b ? matmul(a.t(), g) : Tensor()};
+           });
+  }
   return out;
 }
 

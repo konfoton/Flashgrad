@@ -114,4 +114,40 @@ TEST(ReduceGrads, SumToIsDifferentiable) {
   EXPECT_TRUE(gradcheck::check(op, reference, {a}));
 }
 
+double multiply(double x, double y) { return x * y; }
+
+TEST(ReduceGrads, ProdAlongEachDimension) {
+  SKIP_IF_NO_CUDA();
+  for (const Tensor& a : inputs()) {
+    for (std::int64_t d = 0; d < a.dim(); ++d) {
+      for (const bool keepdim : {false, true}) {
+        const auto op = [&](const std::vector<Tensor>& in) {
+          return fg::prod(in[0], d, keepdim);
+        };
+        const auto reference = [&](const std::vector<Values>& in) {
+          return ref::reduce(in[0], a.shape(), d, multiply, 1.0);
+        };
+        EXPECT_TRUE(gradcheck::check(op, reference, {a}))
+            << "dim " << d << " keepdim " << keepdim << " of " << fg::describe(a);
+      }
+    }
+  }
+}
+
+TEST(ReduceGrads, ProdWithZeros) {
+  SKIP_IF_NO_CUDA();
+  // Rows with no zero, one zero and two zeros. The product is linear in each element, so
+  // finite differences are exact even at zero.
+  const Tensor a = fg::tensor({2, 3, 4, 2, 0, 4, 0, 3, 0}, {3, 3}, fg::Device::cuda());
+  const auto op = [](const std::vector<Tensor>& in) { return fg::prod(in[0], 1); };
+  const auto reference = [](const std::vector<Values>& in) {
+    return ref::reduce(in[0], {3, 3}, 1, multiply, 1.0);
+  };
+  EXPECT_TRUE(gradcheck::check(op, reference, {a}));
+
+  const Tensor x = a.detach().requires_grad_();
+  fg::prod(x, 1).backward(fg::ones({3}, {.device = fg::Device::cuda()}));
+  EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{12, 8, 6, 0, 8, 0, 0, 0, 0}));
+}
+
 }  // namespace

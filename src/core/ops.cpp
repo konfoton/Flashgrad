@@ -192,8 +192,28 @@ Tensor sum(const Tensor& a, std::int64_t dim, bool keepdim) {
   }
   return out;
 }
+// The gradient of a row's product for one element is the product of the other elements.
+// out / a would divide by zero, so zeros are counted per row instead: with no zero it is
+// out / a; with one zero, only the zero element gets a gradient, the product of the rest;
+// with more, every gradient is 0.
 Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim) {
-  return reduce(ReduceOp::Prod, "prod", a, dim, keepdim);
+  Tensor out = reduce(ReduceOp::Prod, "prod", a, dim, keepdim);
+  if (needs_grad({a})) {
+    const std::int64_t d = normalize_dim(dim, a.dim(), "prod");
+    record(out, "prod", {a}, [a = a.detach(), d, keepdim](const Tensor& g) {
+      const Tensor zero = zeros({}, a.options());
+      const Tensor is_zero = eq(a, zero);
+      const Tensor nonzero = a + is_zero;  // zeros replaced by ones
+      const Tensor nonzero_prod = prod(nonzero, d, /*keepdim=*/true);
+      const Tensor zero_count = sum(is_zero, d, /*keepdim=*/true);
+      const Tensor no_zero = eq(zero_count, zero);
+      const Tensor one_zero = eq(zero_count, ones({}, a.options()));
+      const Tensor others = (1.0f - is_zero) * no_zero * nonzero_prod / nonzero +
+                            is_zero * one_zero * nonzero_prod;
+      return Grads{(keepdim ? g : g.unsqueeze(d)) * others};
+    });
+  }
+  return out;
 }
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim) {
   return reduce(ReduceOp::Max, "max", a, dim, keepdim);

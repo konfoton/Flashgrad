@@ -8,8 +8,8 @@
 namespace flashgrad {
 
 // Owning pointer to device or host memory. The deleter knows how to release it, so storage
-// code never calls free/cudaFree directly. Phase 3 replaces the CUDA deleter with one that
-// returns blocks to a caching allocator.
+// code never calls free/cudaFree directly. CUDA memory is returned to the caching allocator
+// (flashgrad/cuda/allocator.h).
 using DataPtr = std::unique_ptr<void, void (*)(void*)>;
 
 // Alignment of every CPU allocation (one cache line; enough for any SIMD load).

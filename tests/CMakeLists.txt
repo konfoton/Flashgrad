@@ -15,6 +15,7 @@ add_executable(flashgrad_tests
   core/test_shape.cpp
   core/test_tensor.cpp
   core/test_views.cpp
+  cuda/test_caching_allocator.cpp
   cuda/test_ops_elementwise.cpp
   cuda/test_ops_matmul.cpp
   cuda/test_ops_reduce.cpp
@@ -32,3 +33,8 @@ target_link_libraries(flashgrad_tests PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(flashgrad_tests DISCOVERY_MODE PRE_TEST)
+# The whole suite again with the caching allocator off, so every free goes to cudaFree.
+gtest_discover_tests(flashgrad_tests DISCOVERY_MODE PRE_TEST
+  TEST_PREFIX "no_caching."
+  PROPERTIES ENVIRONMENT "FLASHGRAD_NO_CACHING=1"
+)

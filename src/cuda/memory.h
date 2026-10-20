@@ -21,7 +21,8 @@ class DeviceGuard {
   int previous_ = 0;
 };
 
-// cudaMalloc on `device`; the returned pointer is released with cudaFree.
+// Memory on `device` from the caching allocator (caching_allocator.cpp); the DataPtr returns
+// it to the cache.
 DataPtr allocate(std::size_t nbytes, int device);
 
 void copy_host_to_device(void* dst, int dst_device, const void* src, std::size_t nbytes);

@@ -190,4 +190,48 @@ TEST(BinaryGrads, ComparisonsAreNotDifferentiable) {
   EXPECT_FALSE(b.grad().defined());
 }
 
+// ---- Operators ------------------------------------------------------------------------
+
+TEST(OperatorGrads, ScalarOperandsOnEitherSide) {
+  SKIP_IF_NO_CUDA();
+  // The scalar becomes a 0-dim tensor that doesn't require grad, so only `x` gets a gradient.
+  struct Case {
+    const char* name;
+    Tensor (*op)(const Tensor&);
+    double (*reference)(double);
+  };
+  const std::vector<Case> cases = {
+      {"x + 2", [](const Tensor& x) { return x + 2.0f; }, [](double x) { return x + 2; }},
+      {"2 + x", [](const Tensor& x) { return 2.0f + x; }, [](double x) { return 2 + x; }},
+      {"x - 2", [](const Tensor& x) { return x - 2.0f; }, [](double x) { return x - 2; }},
+      {"2 - x", [](const Tensor& x) { return 2.0f - x; }, [](double x) { return 2 - x; }},
+      {"x * 3", [](const Tensor& x) { return x * 3.0f; }, [](double x) { return x * 3; }},
+      {"3 * x", [](const Tensor& x) { return 3.0f * x; }, [](double x) { return 3 * x; }},
+      {"x / 4", [](const Tensor& x) { return x / 4.0f; }, [](double x) { return x / 4; }},
+      {"4 / x", [](const Tensor& x) { return 4.0f / x; }, [](double x) { return 4 / x; }},
+      {"-x", [](const Tensor& x) { return -x; }, [](double x) { return -x; }},
+  };
+  const Tensor x = ref::random_cuda({2, 3}, 60, away_from_zero);
+  for (const Case& c : cases) {
+    const auto op = [&](const std::vector<Tensor>& in) { return c.op(in[0]); };
+    const auto reference = [&](const std::vector<Values>& in) {
+      return ref::unary(in[0], c.reference);
+    };
+    EXPECT_TRUE(gradcheck::check(op, reference, {x})) << c.name;
+  }
+}
+
+TEST(OperatorGrads, ComposedExpression) {
+  SKIP_IF_NO_CUDA();
+  // A hand-written sigmoid and (x^2 - 1) / 2 through several ops.
+  const auto op = [](const std::vector<Tensor>& in) {
+    const Tensor& x = in[0];
+    return 1.0f / (1.0f + fg::exp(-x)) + (x - 1.0f) * (x + 1.0f) / 2.0f;
+  };
+  const auto reference = [](const std::vector<Values>& in) {
+    return ref::unary(in[0], [](double x) { return 1 / (1 + std::exp(-x)) + (x * x - 1) / 2; });
+  };
+  EXPECT_TRUE(gradcheck::check(op, reference, {ref::random_cuda({3, 5}, 61)}));
+}
+
 }  // namespace

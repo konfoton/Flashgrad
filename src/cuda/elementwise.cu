@@ -1,5 +1,6 @@
 #include <cuda_runtime.h>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 
@@ -9,7 +10,7 @@
 #include "flashgrad/core/error.h"
 #include "flashgrad/cuda/check.h"
 
-// Elementwise map (unary) and zip (binary) kernels.
+// Elementwise fill, map (unary) and zip (binary) kernels.
 // One functor per op, one templated kernel per arity, operands addressed through strides.
 namespace flashgrad::cuda::detail {
 
@@ -67,6 +68,18 @@ struct EqFn {
 // ---- Kernels --------------------------------------------------------------------------
 // `calc` maps a linear index to the offsets of out and the inputs (IdentityCalc when all are
 // contiguous, OffsetCalc otherwise).
+// The value is a kernel argument, so filling needs no host -> device copy.
+template <typename Calc>
+__global__ void fill_kernel(float* __restrict__ out, float value, Calc calc, std::int64_t n) {
+  const std::int64_t step = static_cast<std::int64_t>(blockDim.x) * gridDim.x;
+  for (std::int64_t i = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x; i < n;
+       i += step) {
+    std::int64_t off[1];
+    calc.offsets(i, off);
+    out[off[0]] = value;
+  }
+}
+
 template <typename F, typename Calc>
 __global__ void map_kernel(F f, float* __restrict__ out, const float* __restrict__ a, Calc calc,
                            std::int64_t n) {
@@ -127,6 +140,24 @@ void launch_zip(F f, const Tensor& out, const Tensor& a, const Tensor& b, Stream
 }
 
 }  // namespace
+
+void fill(const Tensor& out, float value, Stream stream) {
+  const std::int64_t n = out.numel();
+  if (n == 0) return;
+  DeviceGuard guard(out.device().index());
+  constexpr std::uint32_t thread_count = 256;
+  constexpr std::uint32_t shm_bytes = 0;
+  const auto num_blocks =
+      static_cast<std::uint32_t>(std::min((n + thread_count - 1) / thread_count, kMaxBlocks));
+  if (out.is_contiguous()) {
+    fill_kernel<<<num_blocks, thread_count, shm_bytes, stream>>>(out.data_ptr(), value,
+                                                                 IdentityCalc<1>{}, n);
+  } else {
+    const auto calc = make_offset_calc<1>(out.shape(), {&out.strides()});
+    fill_kernel<<<num_blocks, thread_count, shm_bytes, stream>>>(out.data_ptr(), value, calc, n);
+  }
+  FG_CUDA_KERNEL_CHECK();
+}
 
 void unary(UnaryOp op, const Tensor& out, const Tensor& a, Stream stream) {
   if (out.numel() == 0) return;

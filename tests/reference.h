@@ -14,7 +14,8 @@
 #include "flashgrad/core/tensor.h"
 
 // Naive host references for the ops tests: plain loops over row-major std::vectors with
-// double arithmetic. Test code only, never part of the library.
+// double arithmetic. Test code only, never part of the library. The element type T is float
+// for checking op results and double for the finite-difference gradient checks.
 namespace ref {
 
 using flashgrad::Shape;
@@ -31,24 +32,26 @@ inline std::vector<std::int64_t> row_major_strides(const Shape& shape) {
   return strides;
 }
 
-template <typename F>
-std::vector<float> unary(const std::vector<float>& a, F f) {
-  std::vector<float> out(a.size());
-  for (std::size_t i = 0; i < a.size(); ++i) out[i] = static_cast<float>(f(double{a[i]}));
+template <typename T, typename F>
+std::vector<T> unary(const std::vector<T>& a, F f) {
+  std::vector<T> out(a.size());
+  for (std::size_t i = 0; i < a.size(); ++i) {
+    out[i] = static_cast<T>(f(static_cast<double>(a[i])));
+  }
   return out;
 }
 
 // `a` and `b` hold row-major values of shapes `as` and `bs`; the result has the broadcast
 // shape `os`.
-template <typename F>
-std::vector<float> binary(const std::vector<float>& a, const Shape& as, const std::vector<float>& b,
-                          const Shape& bs, const Shape& os, F f) {
+template <typename T, typename F>
+std::vector<T> binary(const std::vector<T>& a, const Shape& as, const std::vector<T>& b,
+                      const Shape& bs, const Shape& os, F f) {
   const auto a_strides = row_major_strides(as);
   const auto b_strides = row_major_strides(bs);
   const auto ndim = static_cast<std::int64_t>(os.size());
   const auto a_lead = ndim - static_cast<std::int64_t>(as.size());
   const auto b_lead = ndim - static_cast<std::int64_t>(bs.size());
-  std::vector<float> out(static_cast<std::size_t>(count(os)));
+  std::vector<T> out(static_cast<std::size_t>(count(os)));
   for (std::int64_t i = 0; i < count(os); ++i) {
     std::int64_t rest = i, ai = 0, bi = 0;
     for (std::int64_t d = ndim - 1; d >= 0; --d) {
@@ -57,27 +60,29 @@ std::vector<float> binary(const std::vector<float>& a, const Shape& as, const st
       if (d >= a_lead && as[d - a_lead] != 1) ai += pos * a_strides[d - a_lead];
       if (d >= b_lead && bs[d - b_lead] != 1) bi += pos * b_strides[d - b_lead];
     }
-    out[i] = static_cast<float>(f(double{a[ai]}, double{b[bi]}));
+    out[i] = static_cast<T>(f(static_cast<double>(a[ai]), static_cast<double>(b[bi])));
   }
   return out;
 }
 
 // Reduces row-major `a` of `shape` along `dim`; the result is row-major with keepdim layout.
-template <typename F>
-std::vector<float> reduce(const std::vector<float>& a, const Shape& shape, std::int64_t dim, F f,
-                          double init) {
+template <typename T, typename F>
+std::vector<T> reduce(const std::vector<T>& a, const Shape& shape, std::int64_t dim, F f,
+                      double init) {
   std::int64_t outer = 1, inner = 1;
   for (std::int64_t d = 0; d < dim; ++d) outer *= shape[d];
   for (std::int64_t d = dim + 1; d < static_cast<std::int64_t>(shape.size()); ++d) {
     inner *= shape[d];
   }
   const std::int64_t n = shape[dim];
-  std::vector<float> out(static_cast<std::size_t>(outer * inner));
+  std::vector<T> out(static_cast<std::size_t>(outer * inner));
   for (std::int64_t o = 0; o < outer; ++o) {
     for (std::int64_t in = 0; in < inner; ++in) {
       double acc = init;
-      for (std::int64_t k = 0; k < n; ++k) acc = f(acc, double{a[(o * n + k) * inner + in]});
-      out[o * inner + in] = static_cast<float>(acc);
+      for (std::int64_t k = 0; k < n; ++k) {
+        acc = f(acc, static_cast<double>(a[(o * n + k) * inner + in]));
+      }
+      out[o * inner + in] = static_cast<T>(acc);
     }
   }
   return out;
@@ -86,38 +91,41 @@ std::vector<float> reduce(const std::vector<float>& a, const Shape& shape, std::
 inline double nan_max(double a, double b) { return (a > b || std::isnan(a)) ? a : b; }
 
 // Row-major `a` [m, k] times row-major `b` [k, n].
-inline std::vector<float> matmul(const std::vector<float>& a, const std::vector<float>& b,
-                                 std::int64_t m, std::int64_t k, std::int64_t n) {
-  std::vector<float> out(static_cast<std::size_t>(m * n));
+template <typename T>
+std::vector<T> matmul(const std::vector<T>& a, const std::vector<T>& b, std::int64_t m,
+                      std::int64_t k, std::int64_t n) {
+  std::vector<T> out(static_cast<std::size_t>(m * n));
   for (std::int64_t i = 0; i < m; ++i) {
     for (std::int64_t j = 0; j < n; ++j) {
       double acc = 0.0;
-      for (std::int64_t p = 0; p < k; ++p) acc += double{a[i * k + p]} * double{b[p * n + j]};
-      out[i * n + j] = static_cast<float>(acc);
+      for (std::int64_t p = 0; p < k; ++p) {
+        acc += static_cast<double>(a[i * k + p]) * static_cast<double>(b[p * n + j]);
+      }
+      out[i * n + j] = static_cast<T>(acc);
     }
   }
   return out;
 }
 
 // log_softmax of row-major `a` of `shape` along `dim`, in double.
-inline std::vector<float> log_softmax(const std::vector<float>& a, const Shape& shape,
-                                      std::int64_t dim) {
+template <typename T>
+std::vector<T> log_softmax(const std::vector<T>& a, const Shape& shape, std::int64_t dim) {
   std::int64_t outer = 1, inner = 1;
   for (std::int64_t d = 0; d < dim; ++d) outer *= shape[d];
   for (std::int64_t d = dim + 1; d < static_cast<std::int64_t>(shape.size()); ++d) {
     inner *= shape[d];
   }
   const std::int64_t n = shape[dim];
-  std::vector<float> out(a.size());
+  std::vector<T> out(a.size());
   for (std::int64_t o = 0; o < outer; ++o) {
     for (std::int64_t in = 0; in < inner; ++in) {
       const auto at = [&](std::int64_t k) { return (o * n + k) * inner + in; };
       double max = -std::numeric_limits<double>::infinity();
-      for (std::int64_t k = 0; k < n; ++k) max = nan_max(max, double{a[at(k)]});
+      for (std::int64_t k = 0; k < n; ++k) max = nan_max(max, static_cast<double>(a[at(k)]));
       double sum = 0.0;
-      for (std::int64_t k = 0; k < n; ++k) sum += std::exp(double{a[at(k)]} - max);
+      for (std::int64_t k = 0; k < n; ++k) sum += std::exp(static_cast<double>(a[at(k)]) - max);
       for (std::int64_t k = 0; k < n; ++k) {
-        out[at(k)] = static_cast<float>(double{a[at(k)]} - max - std::log(sum));
+        out[at(k)] = static_cast<T>(static_cast<double>(a[at(k)]) - max - std::log(sum));
       }
     }
   }

@@ -177,6 +177,7 @@ Tensor maximum(const Tensor& a, const Tensor& b) {
   }
   return out;
 }
+// Comparisons are piecewise constant: their gradient is zero, so they aren't recorded.
 Tensor lt(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Lt, "lt", a, b); }
 Tensor eq(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Eq, "eq", a, b); }
 

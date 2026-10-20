@@ -23,7 +23,8 @@ Tensor sub(const Tensor& a, const Tensor& b);
 Tensor mul(const Tensor& a, const Tensor& b);
 Tensor div(const Tensor& a, const Tensor& b);
 Tensor maximum(const Tensor& a, const Tensor& b);
-// Comparisons: 1.0 where true, 0.0 where false.
+// Comparisons: 1.0 where true, 0.0 where false. Not differentiable: the results never
+// require grad, so they can serve as masks.
 Tensor lt(const Tensor& a, const Tensor& b);
 Tensor eq(const Tensor& a, const Tensor& b);
 

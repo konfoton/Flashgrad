@@ -175,4 +175,19 @@ TEST(BinaryGrads, MaximumSplitsTiesEvenly) {
   EXPECT_EQ(x.grad().to_vector(), (std::vector<float>{1, 1}));
 }
 
+TEST(BinaryGrads, ComparisonsAreNotDifferentiable) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = ref::random_cuda({4}, 50).requires_grad_();
+  const Tensor b = ref::random_cuda({4}, 51).requires_grad_();
+  for (const Tensor& mask : {fg::lt(a, b), fg::eq(a, b)}) {
+    EXPECT_FALSE(mask.requires_grad());
+    EXPECT_EQ(mask.grad_fn(), nullptr);
+  }
+  // As a mask, the comparison passes the gradient through only where it is 1.
+  const Tensor mask = fg::lt(a, b);
+  (a * mask).backward(fg::ones({4}, {.device = fg::Device::cuda()}));
+  EXPECT_EQ(a.grad().to_vector(), mask.to_vector());
+  EXPECT_FALSE(b.grad().defined());
+}
+
 }  // namespace

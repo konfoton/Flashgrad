@@ -1,5 +1,5 @@
-// Tour of the Phase 2 ops: elementwise kernels, broadcasting, reductions and strided inputs,
-// composed into a numerically stable softmax and a cross-entropy loss. Needs a GPU.
+// Tour of the Phase 2 ops: elementwise kernels, broadcasting, reductions, matmul and strided
+// inputs, composed into a numerically stable softmax and a cross-entropy loss. Needs a GPU.
 #include <iostream>
 
 #include "flashgrad/flashgrad.h"
@@ -41,6 +41,8 @@ int main() {
   std::cout << "1 / (1 + exp(-x)) (sigmoid by hand) =\n" << 1.0f / (1.0f + fg::exp(-x)) << "\n";
   const fg::Tensor mean = fg::sum(x, 1, /*keepdim=*/true) / 3.0f;  // [2, 1]
   std::cout << "x - mean(x, 1) (rows centered) =\n" << x - mean << "\n";
+
+  std::cout << "x @ x.t() =\n" << fg::matmul(x, x.t()) << "\n";
 
   fg::manual_seed(0);
   const fg::Tensor logits = fg::randn({4, 5}).cuda() * 3.0f;

@@ -23,6 +23,7 @@ void check(const Tensor& a, const Tensor& b) {
   const std::vector<float> expected = ref::matmul(a.to_vector(), b.to_vector(), m, k, n);
   const Tensor out = fg::matmul(a, b);
   EXPECT_EQ(out.shape(), (fg::Shape{m, n}));
+  EXPECT_TRUE(out.device().is_cuda());
   EXPECT_TRUE(out.is_contiguous());
   EXPECT_TRUE(ref::close(out.to_vector(), expected, 1e-5, 2e-6 * static_cast<double>(k)))
       << fg::describe(a) << " @ " << fg::describe(b);
@@ -46,6 +47,16 @@ TEST(MatmulOps, Large) {
   SKIP_IF_NO_CUDA();
   check(ref::random_cuda({300, 1024}, 10), ref::random_cuda({1024, 260}, 11));  // float4 paths
   check(ref::random_cuda({257, 513}, 12), ref::random_cuda({513, 255}, 13));    // scalar paths
+  check(ref::random_cuda({3000, 8}, 14), ref::random_cuda({8, 300}, 15));       // many tiles
+  check(ref::random_cuda({1, 5000}, 16), ref::random_cuda({5000, 1}, 17));      // dot product
+}
+
+TEST(MatmulOps, SmallExactValues) {
+  SKIP_IF_NO_CUDA();
+  const fg::Device gpu = fg::Device::cuda();
+  const Tensor a = fg::tensor({1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f}, {2, 3}, gpu);
+  const Tensor b = fg::tensor({7.0f, 8.0f, 9.0f, 10.0f, 11.0f, 12.0f}, {3, 2}, gpu);
+  EXPECT_EQ(fg::matmul(a, b).to_vector(), (std::vector<float>{58.0f, 64.0f, 139.0f, 154.0f}));
 }
 
 TEST(MatmulOps, TransposedInputs) {

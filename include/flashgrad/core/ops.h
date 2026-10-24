@@ -39,9 +39,10 @@ Tensor max(const Tensor& a, std::int64_t dim, bool keepdim = false);
 // inputs don't overflow. A NaN in a row makes the whole row NaN.
 Tensor log_softmax(const Tensor& a, std::int64_t dim);
 
-// ---- Linear algebra ------------------------------------------------------------------
-// Matrix product of 2-D tensors: [m, k] @ [k, n] -> [m, n], accumulated in float32.
-// With k == 0 the result is all zeros.
+// ---- Matrix multiplication -----------------------------------------------------------
+// Product of matrices a [M, K] and b [K, N], giving [M, N]; accumulated in float32.
+// Inputs may be strided views; ones that aren't contiguous with rows a multiple of 4 floats
+// long are first copied into a zero-padded buffer.
 Tensor matmul(const Tensor& a, const Tensor& b);
 
 // ---- Operators ------------------------------------------------------------------------

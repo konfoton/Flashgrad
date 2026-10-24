@@ -101,7 +101,7 @@ Tensor matmul(const Tensor& a, const Tensor& b) {
   check_input("matmul", b);
   FG_CHECK(a.device() == b.device(), "matmul: operands are on different devices, got ",
            describe(a), " and ", describe(b));
-  FG_CHECK(a.dim() == 2 && b.dim() == 2, "matmul: expected 2-D tensors, got ", describe(a),
+  FG_CHECK(a.dim() == 2 && b.dim() == 2, "matmul: expected 2-D matrices, got ", describe(a),
            " and ", describe(b));
   FG_CHECK(a.size(1) == b.size(0), "matmul: inner dimensions don't match, got ", describe(a),
            " and ", describe(b));

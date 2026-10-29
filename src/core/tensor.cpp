@@ -108,7 +108,7 @@ Tensor download(const Tensor& src) {
   Storage host(nbytes, Device::cpu());
   cuda::detail::copy_device_to_host(host.data(), src.data_ptr(), src.device().index(), nbytes);
   return Tensor(
-      std::make_shared<TensorImpl>(std::move(host), src.shape(), src.strides(), 0, src.dtype()));
+      std::make_shared<TensorView>(std::move(host), src.shape(), src.strides(), 0, src.dtype()));
 }
 
 // dst = src for CUDA tensors of the same shape on the same device: one memcpy when both are
@@ -128,15 +128,15 @@ void copy_on_device(const Tensor& dst, const Tensor& src) {
 // A new handle on the storage of `t`, without autograd history. The view ops record their
 // own gradients on top of it.
 Tensor make_view(const Tensor& t, Shape shape, Strides strides, std::int64_t offset) {
-  return Tensor(std::make_shared<TensorImpl>(t.storage(), std::move(shape), std::move(strides),
+  return Tensor(std::make_shared<TensorView>(t.storage(), std::move(shape), std::move(strides),
                                              offset, t.dtype()));
 }
 
 }  // namespace
 
-Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(std::move(impl)) {}
+Tensor::Tensor(std::shared_ptr<TensorView> impl) : impl_(std::move(impl)) {}
 
-const TensorImpl& Tensor::impl_ref() const {
+const TensorView& Tensor::impl_ref() const {
   FG_CHECK(impl_ != nullptr, "Tensor: operation on an undefined tensor");
   return *impl_;
 }
@@ -355,7 +355,7 @@ Tensor Tensor::expand(const Shape& target) const {
   // Every element is read once per copy, so the copies' gradients are summed.
   if (needs_grad({*this})) {
     record(out, "expand", {*this},
-           [shape = shape()](const Tensor& g) { return Grads{sum_to(g, shape)}; });
+           [shape = shape()](const Tensor& g) { return Grads{unbroadcast(g, shape)}; });
   }
   return out;
 }

@@ -248,10 +248,10 @@ Tensor mean(const Tensor& a, std::int64_t dim, bool keepdim) {
   return sum(a, dim, keepdim) / static_cast<float>(n);
 }
 
-Tensor sum_to(const Tensor& a, const Shape& shape) {
-  check_input("sum_to", a);
-  FG_CHECK(broadcast_shapes(shape, a.shape(), "sum_to") == a.shape(), "sum_to: ", describe(a),
-           " is not a broadcast of shape ", to_string(shape));
+Tensor unbroadcast(const Tensor& a, const Shape& shape) {
+  check_input("unbroadcast", a);
+  FG_CHECK(broadcast_shapes(shape, a.shape(), "unbroadcast") == a.shape(), "unbroadcast: ",
+           describe(a), " is not a broadcast of shape ", to_string(shape));
   Tensor out = a;
   const auto lead = a.dim() - static_cast<std::int64_t>(shape.size());
   for (std::int64_t d = 0; d < lead; ++d) out = sum(out, 0);

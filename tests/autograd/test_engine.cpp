@@ -38,8 +38,8 @@ TEST(Engine, RecordsOnlyWhatNeedsGradients) {
   ASSERT_NE(y.grad_fn(), nullptr);
   EXPECT_EQ(y.grad_fn()->name(), "mul");
   ASSERT_EQ(y.grad_fn()->next().size(), 2u);
-  EXPECT_NE(y.grad_fn()->next()[0].node, nullptr);  // x: its AccumulateGrad node
-  EXPECT_EQ(y.grad_fn()->next()[0].node->name(), "AccumulateGrad");
+  EXPECT_NE(y.grad_fn()->next()[0].node, nullptr);  // x: its LeafGrad node
+  EXPECT_EQ(y.grad_fn()->next()[0].node->name(), "LeafGrad");
   EXPECT_EQ(y.grad_fn()->next()[1].node, nullptr);  // c doesn't require grad
   {
     const fg::NoGradGuard no_grad;
@@ -137,13 +137,13 @@ TEST(Engine, TheGraphDiesWithItsOutputs) {
     EXPECT_FALSE(node.expired());
   }
   EXPECT_TRUE(node.expired());
-  // The leaf's AccumulateGrad node belongs to the leaf, not the graph.
-  std::weak_ptr<fg::autograd::Node> accumulator;
+  // The LeafGrad node belongs to the leaf, not the graph.
+  std::weak_ptr<fg::autograd::Node> leaf_node;
   {
     const Tensor y = x * 2.0f;
-    accumulator = y.grad_fn()->next()[0].node;
+    leaf_node = y.grad_fn()->next()[0].node;
   }
-  EXPECT_FALSE(accumulator.expired());
+  EXPECT_FALSE(leaf_node.expired());
 }
 
 TEST(Engine, LongChains) {

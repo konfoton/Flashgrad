@@ -14,7 +14,7 @@ Tensor empty(Shape shape, TensorOptions options) {
   const std::int64_t n = numel(shape);
   Storage storage(static_cast<std::size_t>(n) * element_size(options.dtype), options.device);
   Strides strides = contiguous_strides(shape);
-  return Tensor(std::make_shared<TensorImpl>(std::move(storage), std::move(shape),
+  return Tensor(std::make_shared<TensorView>(std::move(storage), std::move(shape),
                                              std::move(strides), 0, options.dtype));
 }
 

@@ -25,7 +25,7 @@ Tensor to_input_shape(const Tensor& grad, const Shape& shape, const Node& node) 
   if (grad.shape() == shape) return grad;
   FG_CHECK(broadcast_shapes(shape, grad.shape()) == grad.shape(), "backward: ", node.name(),
            " returned a gradient ", describe(grad), " for an input of shape ", to_string(shape));
-  return sum_to(grad, shape);
+  return unbroadcast(grad, shape);
 }
 
 }  // namespace
@@ -45,7 +45,7 @@ void run_backward(const Tensor& root, const Tensor& gradient, bool retain_graph)
   }
 
   const NoGradGuard no_grad;
-  const std::shared_ptr<Node> start = gradient_edge(root);
+  const std::shared_ptr<Node> start = grad_target(root);
 
   // How many edges lead into each node from the part of the graph reachable from the root.
   std::unordered_map<Node*, int> pending;

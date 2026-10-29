@@ -45,7 +45,7 @@ Tensor mean(const Tensor& a);
 // Sums `a` down to `shape`, the inverse of broadcasting: `shape` must broadcast to
 // a.shape(). Leading dims are summed away and dims of size 1 in `shape` are summed with
 // keepdim, e.g. [4, 2, 3] -> [2, 1]. Returns `a` itself when the shapes are equal.
-Tensor sum_to(const Tensor& a, const Shape& shape);
+Tensor unbroadcast(const Tensor& a, const Shape& shape);
 
 // ---- Softmax -------------------------------------------------------------------------
 // log(softmax(a)) along `dim`, computed as (a - max) - log(sum(exp(a - max))) so large

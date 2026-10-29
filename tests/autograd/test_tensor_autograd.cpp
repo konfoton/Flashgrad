@@ -19,7 +19,7 @@ TEST(TensorAutograd, PlainTensorsDoNotRequireGrad) {
   EXPECT_TRUE(t.is_leaf());
   EXPECT_EQ(t.grad_fn(), nullptr);
   EXPECT_FALSE(t.grad().defined());
-  EXPECT_EQ(t.impl()->autograd_meta(), nullptr);  // no autograd state allocated
+  EXPECT_EQ(t.impl()->grad_state(), nullptr);  // no autograd state allocated
 }
 
 TEST(TensorAutograd, RequiresGradOnLeaves) {
@@ -29,7 +29,7 @@ TEST(TensorAutograd, RequiresGradOnLeaves) {
   EXPECT_TRUE(t.is_leaf());
   t.requires_grad_(false);
   EXPECT_FALSE(t.requires_grad());
-  // Handles share the TensorImpl, so they share the flag.
+  // Handles share the TensorView, so they share the flag.
   const Tensor alias = t;
   alias.requires_grad_();
   EXPECT_TRUE(t.requires_grad());
@@ -112,7 +112,7 @@ TEST(AutogradNode, ChecksTheNumberOfGradients) {
 }
 
 TEST(AutogradNode, PersistentNodesSurviveRelease) {
-  Node node("AccumulateGrad", {}, [](const Tensor&) { return std::vector<Tensor>{}; },
+  Node node("LeafGrad", {}, [](const Tensor&) { return std::vector<Tensor>{}; },
             /*persistent=*/true);
   node.release();
   EXPECT_FALSE(node.released());

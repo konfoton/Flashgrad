@@ -11,19 +11,19 @@
 namespace flashgrad {
 
 namespace autograd {
-struct AutogradMeta;
+struct GradState;
 }  // namespace autograd
 
 // The data behind a Tensor handle: a strided view into a Storage.
 // Element (i0, i1, ...) lives at element index offset + i0 * strides[0] + i1 * strides[1] + ...
 // of the storage. The constructor validates that every element of the view is in bounds.
-// Tensors that take part in autograd also carry an AutogradMeta (src/autograd/meta.h).
-class TensorImpl {
+// Tensors that take part in autograd also carry a GradState (src/autograd/grad_state.h).
+class TensorView {
  public:
-  TensorImpl(Storage storage, Shape shape, Strides strides, std::int64_t offset, DType dtype);
-  ~TensorImpl();
-  TensorImpl(const TensorImpl&) = delete;
-  TensorImpl& operator=(const TensorImpl&) = delete;
+  TensorView(Storage storage, Shape shape, Strides strides, std::int64_t offset, DType dtype);
+  ~TensorView();
+  TensorView(const TensorView&) = delete;
+  TensorView& operator=(const TensorView&) = delete;
 
   const Storage& storage() const noexcept { return storage_; }
   const Shape& shape() const noexcept { return shape_; }
@@ -34,8 +34,8 @@ class TensorImpl {
   std::int64_t numel() const noexcept { return numel_; }
 
   // Null until the tensor takes part in autograd.
-  autograd::AutogradMeta* autograd_meta() const noexcept { return autograd_.get(); }
-  autograd::AutogradMeta& ensure_autograd_meta();
+  autograd::GradState* grad_state() const noexcept { return grad_state_.get(); }
+  autograd::GradState& ensure_grad_state();
 
  private:
   Storage storage_;
@@ -44,7 +44,7 @@ class TensorImpl {
   std::int64_t offset_;
   DType dtype_;
   std::int64_t numel_;
-  std::unique_ptr<autograd::AutogradMeta> autograd_;
+  std::unique_ptr<autograd::GradState> grad_state_;
 };
 
 }  // namespace flashgrad

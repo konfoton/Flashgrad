@@ -13,7 +13,7 @@
 #include "flashgrad/core/dtype.h"
 #include "flashgrad/core/shape.h"
 #include "flashgrad/core/storage.h"
-#include "flashgrad/core/tensor_impl.h"
+#include "flashgrad/core/tensor_view.h"
 
 namespace flashgrad {
 
@@ -26,7 +26,7 @@ struct TensorOptions {
   Device device = Device::cpu();
 };
 
-// A handle to a TensorImpl. Copying a Tensor is cheap and shares the data (like PyTorch);
+// A handle to a TensorView. Copying a Tensor is cheap and shares the data (like PyTorch);
 // use clone() for a deep copy. View operations (view, permute, slice, ...) return new
 // handles that share the storage of the original tensor.
 //
@@ -35,11 +35,11 @@ struct TensorOptions {
 class Tensor {
  public:
   Tensor() = default;  // undefined tensor
-  explicit Tensor(std::shared_ptr<TensorImpl> impl);
+  explicit Tensor(std::shared_ptr<TensorView> impl);
 
   bool defined() const noexcept { return impl_ != nullptr; }
-  const std::shared_ptr<TensorImpl>& impl() const noexcept { return impl_; }
-  // True when both handles refer to the same TensorImpl.
+  const std::shared_ptr<TensorView>& impl() const noexcept { return impl_; }
+  // True when both handles refer to the same TensorView.
   bool is_same(const Tensor& other) const noexcept { return impl_ == other.impl_; }
 
   // ---- Metadata ----------------------------------------------------------------------
@@ -145,9 +145,9 @@ class Tensor {
   const Tensor& div_(double other) const;
 
  private:
-  const TensorImpl& impl_ref() const;
+  const TensorView& impl_ref() const;
 
-  std::shared_ptr<TensorImpl> impl_;
+  std::shared_ptr<TensorView> impl_;
 };
 
 // "Tensor(shape=[2, 3], dtype=float32, device=cpu)" — used in error messages.

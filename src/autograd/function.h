@@ -27,8 +27,8 @@ bool needs_grad(std::initializer_list<Tensor> inputs);
 void record(const Tensor& out, const char* name, std::initializer_list<Tensor> inputs,
             Node::BackwardFn backward);
 
-// Where a gradient for `t` goes: its grad_fn, or the AccumulateGrad node of a leaf.
-std::shared_ptr<Node> gradient_edge(const Tensor& t);
+// Where a gradient for `t` goes: its grad_fn, or the LeafGrad node of a leaf.
+std::shared_ptr<Node> grad_target(const Tensor& t);
 
 // Runs the backward pass from `root` (see Tensor::backward).
 void run_backward(const Tensor& root, const Tensor& gradient, bool retain_graph);

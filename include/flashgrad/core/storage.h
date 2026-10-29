@@ -27,7 +27,7 @@ class Storage {
 
  private:
   struct Impl {
-    DataPtr data;
+    Buffer data;
     std::size_t nbytes;
     Device device;
   };

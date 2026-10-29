@@ -45,7 +45,7 @@ void run_backward(const Tensor& root, const Tensor& gradient, bool retain_graph)
   }
 
   const NoGradGuard no_grad;
-  const std::shared_ptr<Node> start = gradient_edge(root);
+  const std::shared_ptr<Node> start = grad_target(root);
 
   // How many edges lead into each node from the part of the graph reachable from the root.
   std::unordered_map<Node*, int> pending;

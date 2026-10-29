@@ -21,9 +21,9 @@ class DeviceGuard {
   int previous_ = 0;
 };
 
-// Memory on `device` from the caching allocator (caching_allocator.cpp); the DataPtr returns
+// Memory on `device` from the caching allocator (caching_allocator.cpp); the Buffer returns
 // it to the cache.
-DataPtr allocate(std::size_t nbytes, int device);
+Buffer allocate(std::size_t nbytes, int device);
 
 void copy_host_to_device(void* dst, int dst_device, const void* src, std::size_t nbytes);
 void copy_device_to_host(void* dst, const void* src, int src_device, std::size_t nbytes);

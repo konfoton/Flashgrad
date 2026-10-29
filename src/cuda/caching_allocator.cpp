@@ -70,7 +70,7 @@ class CachingAllocator {
     return ptr;
   }
 
-  // Called from DataPtr's deleter, so it must not throw.
+  // Called from Buffer's deleter, so it must not throw.
   void free(void* ptr) noexcept {
     std::lock_guard<std::mutex> lock(mutex_);
     const auto it = allocated_.find(ptr);
@@ -184,14 +184,14 @@ bool caching_enabled() { return allocator().enabled(); }
 
 namespace detail {
 
-DataPtr allocate(std::size_t nbytes, int device) {
+Buffer allocate(std::size_t nbytes, int device) {
   if (nbytes == 0) {
     const int count = device_count();
     FG_CHECK(device >= 0 && device < count, "allocate: invalid CUDA device cuda:", device, " (",
              count, " device(s) available)");
-    return DataPtr(nullptr, &cached_free);
+    return Buffer(nullptr, &cached_free);
   }
-  return DataPtr(allocator().allocate(nbytes, device), &cached_free);
+  return Buffer(allocator().allocate(nbytes, device), &cached_free);
 }
 
 }  // namespace detail

@@ -25,7 +25,7 @@ Tensor to_input_shape(const Tensor& grad, const Shape& shape, const Node& node) 
   if (grad.shape() == shape) return grad;
   FG_CHECK(broadcast_shapes(shape, grad.shape()) == grad.shape(), "backward: ", node.name(),
            " returned a gradient ", describe(grad), " for an input of shape ", to_string(shape));
-  return sum_to(grad, shape);
+  return unbroadcast(grad, shape);
 }
 
 }  // namespace

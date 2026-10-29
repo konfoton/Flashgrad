@@ -355,7 +355,7 @@ Tensor Tensor::expand(const Shape& target) const {
   // Every element is read once per copy, so the copies' gradients are summed.
   if (needs_grad({*this})) {
     record(out, "expand", {*this},
-           [shape = shape()](const Tensor& g) { return Grads{sum_to(g, shape)}; });
+           [shape = shape()](const Tensor& g) { return Grads{unbroadcast(g, shape)}; });
   }
   return out;
 }

@@ -101,12 +101,12 @@ TEST(ReduceGrads, ScalarLossBackwardWithoutAGradient) {
   EXPECT_TRUE(ref::close(x.grad().to_vector(), expected, 1e-6, 1e-7));
 }
 
-TEST(ReduceGrads, SumToIsDifferentiable) {
+TEST(ReduceGrads, UnbroadcastIsDifferentiable) {
   SKIP_IF_NO_CUDA();
   // Built from sum, so it needs no backward of its own; its gradient is an expand.
   const Tensor a = ref::random_cuda({4, 2, 3}, 30);
   const Shape to{2, 1};
-  const auto op = [&](const std::vector<Tensor>& in) { return fg::sum_to(in[0], to); };
+  const auto op = [&](const std::vector<Tensor>& in) { return fg::unbroadcast(in[0], to); };
   const auto reference = [&](const std::vector<Values>& in) {
     Values out(2, 0.0);
     for (std::size_t i = 0; i < in[0].size(); ++i) out[i / 3 % 2] += in[0][i];

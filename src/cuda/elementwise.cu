@@ -10,13 +10,16 @@
 #include "flashgrad/core/error.h"
 #include "flashgrad/cuda/check.h"
 
-// Elementwise fill, map (unary) and zip (binary) kernels.
+// Elementwise fill, copy, map (unary) and zip (binary) kernels.
 // One functor per op, one templated kernel per arity, operands addressed through strides.
 namespace flashgrad::cuda::detail {
 
 namespace {
 
 // ---- Unary functors -------------------------------------------------------------------
+struct IdentityFn {
+  __device__ float operator()(float x) const { return x; }
+};
 struct NegFn {
   __device__ float operator()(float x) const { return -x; }
 };
@@ -157,6 +160,12 @@ void fill(const Tensor& out, float value, Stream stream) {
     fill_kernel<<<num_blocks, thread_count, shm_bytes, stream>>>(out.data_ptr(), value, calc, n);
   }
   FG_CUDA_KERNEL_CHECK();
+}
+
+void copy(const Tensor& out, const Tensor& a, Stream stream) {
+  if (out.numel() == 0) return;
+  DeviceGuard guard(out.device().index());
+  launch_map(IdentityFn{}, out, a, stream);
 }
 
 void unary(UnaryOp op, const Tensor& out, const Tensor& a, Stream stream) {

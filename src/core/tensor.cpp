@@ -7,14 +7,21 @@
 #include <utility>
 #include <vector>
 
+#include "autograd/function.h"
 #include "core/checks.h"
 #include "cpu/ops.h"
 #include "cuda/memory.h"
 #include "cuda/ops.h"
+#include "flashgrad/autograd/grad_mode.h"
+#include "flashgrad/core/ops.h"
 
 namespace flashgrad {
 
 namespace {
+
+using autograd::detail::needs_grad;
+using autograd::detail::record;
+using Grads = std::vector<Tensor>;
 
 // Strides that let a tensor with (sizes, strides) be viewed with `new_shape` without
 // copying, or nullopt if no such strides exist. `new_shape` must have the same numel.
@@ -104,6 +111,27 @@ Tensor download(const Tensor& src) {
       std::make_shared<TensorImpl>(std::move(host), src.shape(), src.strides(), 0, src.dtype()));
 }
 
+// dst = src for CUDA tensors of the same shape on the same device: one memcpy when both are
+// contiguous, otherwise the strided copy kernel.
+void copy_on_device(const Tensor& dst, const Tensor& src) {
+  if (dst.is_contiguous() && src.is_contiguous()) {
+    cuda::detail::copy_device_to_device(dst.data_ptr(), dst.device().index(), src.data_ptr(),
+                                        src.device().index(), dst.nbytes());
+    return;
+  }
+  FG_CHECK(dst.dim() <= cuda::detail::kMaxDims, "copy_: at most ", cuda::detail::kMaxDims,
+           " dimensions are supported for non-contiguous CUDA tensors, got ", describe(src),
+           " -> ", describe(dst));
+  cuda::detail::copy(dst, src);
+}
+
+// A new handle on the storage of `t`, without autograd history. The view ops record their
+// own gradients on top of it.
+Tensor make_view(const Tensor& t, Shape shape, Strides strides, std::int64_t offset) {
+  return Tensor(std::make_shared<TensorImpl>(t.storage(), std::move(shape), std::move(strides),
+                                             offset, t.dtype()));
+}
+
 }  // namespace
 
 Tensor::Tensor(std::shared_ptr<TensorImpl> impl) : impl_(std::move(impl)) {}
@@ -154,13 +182,14 @@ float* Tensor::data_ptr() const {
 
 // ---- Host access -----------------------------------------------------------------------
 
+// Reading values isn't part of the graph, hence detach() before the copies.
 float Tensor::item() const {
   FG_CHECK(numel() == 1, "item: expected a tensor with one element, got ", describe(*this));
-  return *cpu().data_ptr();
+  return *detach().cpu().data_ptr();
 }
 
 std::vector<float> Tensor::to_vector() const {
-  const Tensor host = cpu().contiguous();
+  const Tensor host = detach().cpu().contiguous();
   const float* data = host.data_ptr();
   if (data == nullptr) return {};
   return std::vector<float>(data, data + host.numel());
@@ -168,18 +197,26 @@ std::vector<float> Tensor::to_vector() const {
 
 // ---- Views -----------------------------------------------------------------------------
 
+// An arbitrary view can make elements overlap or skip some, so it has no general gradient.
 Tensor Tensor::as_strided(Shape new_shape, Strides new_strides, std::int64_t new_offset) const {
-  return Tensor(std::make_shared<TensorImpl>(storage(), std::move(new_shape),
-                                             std::move(new_strides), new_offset, dtype()));
+  FG_CHECK(!needs_grad({*this}), "as_strided: not differentiable, got ", describe(*this),
+           " that requires grad; use the view ops or detach()");
+  return make_view(*this, std::move(new_shape), std::move(new_strides), new_offset);
 }
 
+// Same elements in the same row-major order, so the gradient only changes shape.
 Tensor Tensor::view(Shape new_shape) const {
   new_shape = infer_shape(std::move(new_shape), numel(), "view");
   const auto new_strides = compute_view_strides(shape(), strides(), new_shape);
   FG_CHECK(new_strides.has_value(), "view: cannot view ", describe(*this), " with strides ",
            to_string(strides()), " as shape ", to_string(new_shape),
            " without copying; use reshape()");
-  return as_strided(std::move(new_shape), *new_strides, offset());
+  Tensor out = make_view(*this, std::move(new_shape), *new_strides, offset());
+  if (needs_grad({*this})) {
+    record(out, "view", {*this},
+           [shape = shape()](const Tensor& g) { return Grads{g.reshape(shape)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::reshape(Shape new_shape) const {
@@ -202,11 +239,13 @@ Tensor Tensor::flatten(std::int64_t start_dim, std::int64_t end_dim) const {
   return reshape(std::move(new_shape));
 }
 
+// The gradient goes back through the inverse permutation.
 Tensor Tensor::permute(const std::vector<std::int64_t>& dims) const {
   FG_CHECK(static_cast<std::int64_t>(dims.size()) == dim(), "permute: got ", dims.size(), " dims ",
            to_string(dims), " for ", describe(*this));
   Shape new_shape(dims.size());
   Strides new_strides(dims.size());
+  std::vector<std::int64_t> inverse(dims.size());
   std::vector<bool> seen(dims.size(), false);
   for (std::size_t i = 0; i < dims.size(); ++i) {
     const std::int64_t d = normalize_dim(dims[i], dim(), "permute");
@@ -214,10 +253,17 @@ Tensor Tensor::permute(const std::vector<std::int64_t>& dims) const {
     seen[d] = true;
     new_shape[i] = shape()[d];
     new_strides[i] = strides()[d];
+    inverse[d] = static_cast<std::int64_t>(i);
   }
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "permute", {*this},
+           [inverse](const Tensor& g) { return Grads{g.permute(inverse)}; });
+  }
+  return out;
 }
 
+// Swapping the same two dims again undoes the transpose.
 Tensor Tensor::transpose(std::int64_t dim0, std::int64_t dim1) const {
   const std::int64_t d0 = normalize_dim(dim0, dim(), "transpose");
   const std::int64_t d1 = normalize_dim(dim1, dim(), "transpose");
@@ -225,7 +271,12 @@ Tensor Tensor::transpose(std::int64_t dim0, std::int64_t dim1) const {
   Strides new_strides = strides();
   std::swap(new_shape[d0], new_shape[d1]);
   std::swap(new_strides[d0], new_strides[d1]);
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "transpose", {*this},
+           [d0, d1](const Tensor& g) { return Grads{g.transpose(d0, d1)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::t() const {
@@ -240,7 +291,11 @@ Tensor Tensor::unsqueeze(std::int64_t d) const {
   const std::int64_t new_stride = pos < dim() ? shape()[pos] * strides()[pos] : 1;
   new_shape.insert(new_shape.begin() + pos, 1);
   new_strides.insert(new_strides.begin() + pos, new_stride);
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "unsqueeze", {*this}, [pos](const Tensor& g) { return Grads{g.squeeze(pos)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::squeeze() const {
@@ -251,7 +306,12 @@ Tensor Tensor::squeeze() const {
     new_shape.push_back(shape()[d]);
     new_strides.push_back(strides()[d]);
   }
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "squeeze", {*this},
+           [shape = shape()](const Tensor& g) { return Grads{g.reshape(shape)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::squeeze(std::int64_t d) const {
@@ -261,7 +321,11 @@ Tensor Tensor::squeeze(std::int64_t d) const {
   Strides new_strides = strides();
   new_shape.erase(new_shape.begin() + pos);
   new_strides.erase(new_strides.begin() + pos);
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  if (needs_grad({*this})) {
+    record(out, "squeeze", {*this}, [pos](const Tensor& g) { return Grads{g.unsqueeze(pos)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::expand(const Shape& target) const {
@@ -287,7 +351,13 @@ Tensor Tensor::expand(const Shape& target) const {
     new_shape[d] = want;
     new_strides[d] = want == current ? strides()[d - lead] : 0;
   }
-  return as_strided(std::move(new_shape), std::move(new_strides), offset());
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides), offset());
+  // Every element is read once per copy, so the copies' gradients are summed.
+  if (needs_grad({*this})) {
+    record(out, "expand", {*this},
+           [shape = shape()](const Tensor& g) { return Grads{sum_to(g, shape)}; });
+  }
+  return out;
 }
 
 Tensor Tensor::slice(std::int64_t d, std::int64_t start, std::int64_t end,
@@ -303,8 +373,17 @@ Tensor Tensor::slice(std::int64_t d, std::int64_t start, std::int64_t end,
   Strides new_strides = strides();
   new_shape[pos] = (end - start + step - 1) / step;
   new_strides[pos] = strides()[pos] * step;
-  return as_strided(std::move(new_shape), std::move(new_strides),
-                    offset() + start * strides()[pos]);
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides),
+                         offset() + start * strides()[pos]);
+  // The gradient lands in the sliced positions of a zero tensor of the input's shape.
+  if (needs_grad({*this})) {
+    record(out, "slice", {*this}, [shape = shape(), pos, start, end, step](const Tensor& g) {
+      const Tensor grad = zeros(shape, g.options());
+      grad.slice(pos, start, end, step).copy_(g);
+      return Grads{grad};
+    });
+  }
+  return out;
 }
 
 Tensor Tensor::select(std::int64_t d, std::int64_t index) const {
@@ -317,24 +396,44 @@ Tensor Tensor::select(std::int64_t d, std::int64_t index) const {
   Strides new_strides = strides();
   new_shape.erase(new_shape.begin() + pos);
   new_strides.erase(new_strides.begin() + pos);
-  return as_strided(std::move(new_shape), std::move(new_strides),
-                    offset() + index * strides()[pos]);
+  Tensor out = make_view(*this, std::move(new_shape), std::move(new_strides),
+                         offset() + index * strides()[pos]);
+  if (needs_grad({*this})) {
+    record(out, "select", {*this}, [shape = shape(), pos, index](const Tensor& g) {
+      const Tensor grad = zeros(shape, g.options());
+      grad.select(pos, index).copy_(g);
+      return Grads{grad};
+    });
+  }
+  return out;
 }
 
 // ---- Copies and conversions --------------------------------------------------------------
 
 Tensor Tensor::contiguous() const { return is_contiguous() ? *this : clone(); }
 
+// A copy passes the gradient through unchanged (moved back to the source's device).
 Tensor Tensor::clone() const {
   Tensor out = empty(shape(), options());
-  out.copy_(*this);
+  {
+    const NoGradGuard no_grad;
+    out.copy_(*this);
+  }
+  if (needs_grad({*this})) record(out, "clone", {*this}, [](const Tensor& g) { return Grads{g}; });
   return out;
 }
 
 Tensor Tensor::to(Device target) const {
   if (device() == target) return *this;
   Tensor out = empty(shape(), {.dtype = dtype(), .device = target});
-  out.copy_(*this);
+  {
+    const NoGradGuard no_grad;
+    out.copy_(*this);
+  }
+  if (needs_grad({*this})) {
+    record(out, "to", {*this},
+           [source = device()](const Tensor& g) { return Grads{g.to(source)}; });
+  }
   return out;
 }
 
@@ -343,6 +442,7 @@ const Tensor& Tensor::copy_(const Tensor& src) const {
   detail::check_defined("copy_", src);
   FG_CHECK(broadcast_shapes(src.shape(), shape(), "copy_") == shape(), "copy_: cannot broadcast ",
            describe(src), " to ", describe(*this));
+  detail::check_in_place("copy_", *this, &src);
   if (numel() == 0) return *this;
   detail::check_writable("copy_", *this);
   // Reading from memory that is being written would make the result order-dependent.
@@ -353,25 +453,29 @@ const Tensor& Tensor::copy_(const Tensor& src) const {
   } else if (device().is_cpu()) {  // CUDA -> CPU
     cpu::copy(*this, download(source).expand(shape()));
   } else if (source.device().is_cpu()) {  // CPU -> CUDA
-    FG_CHECK(is_contiguous(), "copy_: copying into a non-contiguous CUDA tensor needs the CUDA ",
-             "kernels of Phase 2, got destination ", describe(*this));
-    // Lay out the data contiguously on the host, then upload it in one transfer.
+    // Lay out the data contiguously on the host and upload it in one transfer, into this
+    // tensor if it's contiguous, otherwise into a buffer that a kernel then scatters.
     const Tensor staging = empty(shape(), {.dtype = dtype(), .device = Device::cpu()});
     cpu::copy(staging, source.expand(shape()));
-    cuda::detail::copy_host_to_device(data_ptr(), device().index(), staging.data_ptr(), nbytes());
-  } else {  // CUDA -> CUDA
-    FG_CHECK(shape() == source.shape() && is_contiguous() && source.is_contiguous(),
-             "copy_: CUDA-to-CUDA copies with broadcasting or non-contiguous ",
-             "tensors need the CUDA kernels of Phase 2, got ", describe(source), " -> ",
-             describe(*this));
-    cuda::detail::copy_device_to_device(data_ptr(), device().index(), source.data_ptr(),
-                                        source.device().index(), nbytes());
+    const Tensor target = is_contiguous() ? *this : empty(shape(), options());
+    cuda::detail::copy_host_to_device(target.data_ptr(), device().index(), staging.data_ptr(),
+                                      nbytes());
+    if (!target.is_same(*this)) copy_on_device(*this, target);
+  } else if (device() == source.device()) {  // CUDA -> CUDA, same device
+    copy_on_device(*this, source.expand(shape()));
+  } else {  // CUDA -> CUDA between devices: a peer copy of contiguous data
+    const Tensor packed = source.expand(shape()).contiguous();
+    const Tensor target = is_contiguous() ? *this : empty(shape(), options());
+    cuda::detail::copy_device_to_device(target.data_ptr(), device().index(), packed.data_ptr(),
+                                        packed.device().index(), nbytes());
+    if (!target.is_same(*this)) copy_on_device(*this, target);
   }
   return *this;
 }
 
 const Tensor& Tensor::fill_(double value) const {
   detail::check_defined("fill_", *this);
+  detail::check_in_place("fill_", *this);
   if (numel() == 0) return *this;
   if (device().is_cpu()) {
     cpu::fill(*this, value);
@@ -383,6 +487,42 @@ const Tensor& Tensor::fill_(double value) const {
   }
   return *this;
 }
+
+namespace {
+
+// this = f(this, other), computed out of place and copied back; `other` must broadcast to
+// the shape of `self`.
+template <typename F>
+const Tensor& apply_in_place(const Tensor& self, const Tensor& other, const char* op, F f) {
+  detail::check_defined(op, self);
+  detail::check_defined(op, other);
+  detail::check_in_place(op, self, &other);
+  FG_CHECK(broadcast_shapes(other.shape(), self.shape(), op) == self.shape(), op,
+           ": cannot broadcast ", describe(other), " to ", describe(self));
+  self.copy_(f(self, other));
+  return self;
+}
+
+Tensor scalar_for(const Tensor& self, double value) { return full({}, value, self.options()); }
+
+}  // namespace
+
+const Tensor& Tensor::add_(const Tensor& other) const {
+  return apply_in_place(*this, other, "add_", flashgrad::add);
+}
+const Tensor& Tensor::sub_(const Tensor& other) const {
+  return apply_in_place(*this, other, "sub_", flashgrad::sub);
+}
+const Tensor& Tensor::mul_(const Tensor& other) const {
+  return apply_in_place(*this, other, "mul_", flashgrad::mul);
+}
+const Tensor& Tensor::div_(const Tensor& other) const {
+  return apply_in_place(*this, other, "div_", flashgrad::div);
+}
+const Tensor& Tensor::add_(double other) const { return add_(scalar_for(*this, other)); }
+const Tensor& Tensor::sub_(double other) const { return sub_(scalar_for(*this, other)); }
+const Tensor& Tensor::mul_(double other) const { return mul_(scalar_for(*this, other)); }
+const Tensor& Tensor::div_(double other) const { return div_(scalar_for(*this, other)); }
 
 std::string describe(const Tensor& t) {
   if (!t.defined()) return "Tensor(undefined)";

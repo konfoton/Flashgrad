@@ -28,6 +28,10 @@ enum class ReduceOp { Sum, Prod, Max };
 // than kMaxDims dimensions if it is contiguous.
 void fill(const Tensor& out, float value, Stream stream = nullptr);
 
+// out = a, element by element; `a` has the shape of `out` (broadcast beforehand with expand).
+// `out` may be any existing view whose elements don't overlap each other or `a`.
+void copy(const Tensor& out, const Tensor& a, Stream stream = nullptr);
+
 // out = op(a); `a` has the shape of `out`.
 void unary(UnaryOp op, const Tensor& out, const Tensor& a, Stream stream = nullptr);
 
@@ -38,6 +42,9 @@ void binary(BinaryOp op, const Tensor& out, const Tensor& a, const Tensor& b,
 // Reduces `a` along `dim` into `out`, which has the shape of `a` with size 1 at `dim`.
 void reduce(ReduceOp op, const Tensor& out, const Tensor& a, std::int64_t dim,
             Stream stream = nullptr);
+
+// Reduces all elements of `a` into the 0-dim `out`; an empty `a` gives the op's identity.
+void reduce_all(ReduceOp op, const Tensor& out, const Tensor& a, Stream stream = nullptr);
 
 // out = a @ b for 2-D `a` [m, k] and `b` [k, n]; `out` is [m, n] and contiguous.
 void matmul(const Tensor& out, const Tensor& a, const Tensor& b, Stream stream = nullptr);

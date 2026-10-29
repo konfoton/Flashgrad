@@ -10,8 +10,9 @@
 #include "flashgrad/core/error.h"
 #include "flashgrad/cuda/check.h"
 
-// Reduction along one dimension. One block per output element, a strided per-thread loop,
-// then a block-wide reduction (block_reduce.cuh).
+// Reductions. Along one dimension: one block per output element, a strided per-thread loop,
+// then a block-wide reduction (block_reduce.cuh). Over all elements: two passes, first a
+// partial result per block, then one block combines the partials.
 namespace flashgrad::cuda::detail {
 
 namespace {
@@ -52,7 +53,62 @@ void launch_reduce(F f, const Tensor& out, const Tensor& a, std::int64_t dim, St
   FG_CUDA_KERNEL_CHECK();
 }
 
+// Each block combines a grid-stride share of the n elements of `a` into out[blockIdx.x].
+template <typename F, typename Calc>
+__global__ void reduce_all_kernel(F f, float* __restrict__ out, const float* __restrict__ a,
+                                  Calc calc, std::int64_t n) {
+  __shared__ float warp_partials[kMaxRowThreads / kWarpSize];
+  const std::int64_t step = static_cast<std::int64_t>(blockDim.x) * gridDim.x;
+  float v = F::kIdentity;
+  for (std::int64_t i = static_cast<std::int64_t>(blockIdx.x) * blockDim.x + threadIdx.x; i < n;
+       i += step) {
+    std::int64_t off[1];
+    calc.offsets(i, off);
+    v = f(v, a[off[0]]);
+  }
+  v = block_reduce(f, v, warp_partials);
+  if (threadIdx.x == 0) out[blockIdx.x] = v;
+}
+
+// Enough blocks to fill the GPU several times over; more would only add partials.
+constexpr std::int64_t kMaxReduceAllBlocks = 1024;
+
+template <typename F>
+void launch_reduce_all(F f, const Tensor& out, const Tensor& a, Stream stream) {
+  const std::int64_t n = a.numel();
+  constexpr std::uint32_t thread_count = kMaxRowThreads;
+  constexpr std::uint32_t shm_bytes = 0;
+  const auto num_blocks = static_cast<std::uint32_t>(
+      std::clamp<std::int64_t>((n + thread_count - 1) / thread_count, 1, kMaxReduceAllBlocks));
+  // A single block writes the result directly; otherwise the partials go to a buffer.
+  const Tensor partials =
+      num_blocks == 1 ? out : empty({static_cast<std::int64_t>(num_blocks)}, out.options());
+  if (a.is_contiguous()) {
+    reduce_all_kernel<<<num_blocks, thread_count, shm_bytes, stream>>>(
+        f, partials.data_ptr(), a.data_ptr(), IdentityCalc<1>{}, n);
+  } else {
+    const auto calc = make_offset_calc<1>(a.shape(), {&a.strides()});
+    reduce_all_kernel<<<num_blocks, thread_count, shm_bytes, stream>>>(
+        f, partials.data_ptr(), a.data_ptr(), calc, n);
+  }
+  FG_CUDA_KERNEL_CHECK();
+  if (num_blocks == 1) return;
+  reduce_all_kernel<<<1, thread_count, shm_bytes, stream>>>(
+      f, out.data_ptr(), partials.data_ptr(), IdentityCalc<1>{}, num_blocks);
+  FG_CUDA_KERNEL_CHECK();
+}
+
 }  // namespace
+
+void reduce_all(ReduceOp op, const Tensor& out, const Tensor& a, Stream stream) {
+  DeviceGuard guard(out.device().index());
+  switch (op) {
+    case ReduceOp::Sum: return launch_reduce_all(SumFn{}, out, a, stream);
+    case ReduceOp::Prod: return launch_reduce_all(ProdFn{}, out, a, stream);
+    case ReduceOp::Max: return launch_reduce_all(MaxFn{}, out, a, stream);
+  }
+  FG_THROW("reduce_all: unknown op ", static_cast<int>(op));
+}
 
 void reduce(ReduceOp op, const Tensor& out, const Tensor& a, std::int64_t dim, Stream stream) {
   if (out.numel() == 0) return;

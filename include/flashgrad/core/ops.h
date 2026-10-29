@@ -23,7 +23,8 @@ Tensor sub(const Tensor& a, const Tensor& b);
 Tensor mul(const Tensor& a, const Tensor& b);
 Tensor div(const Tensor& a, const Tensor& b);
 Tensor maximum(const Tensor& a, const Tensor& b);
-// Comparisons: 1.0 where true, 0.0 where false.
+// Comparisons: 1.0 where true, 0.0 where false. Not differentiable: the results never
+// require grad, so they can serve as masks.
 Tensor lt(const Tensor& a, const Tensor& b);
 Tensor eq(const Tensor& a, const Tensor& b);
 
@@ -33,6 +34,18 @@ Tensor eq(const Tensor& a, const Tensor& b);
 Tensor sum(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim = false);
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim = false);
+// sum / size of the dimension; an empty dimension gives NaN.
+Tensor mean(const Tensor& a, std::int64_t dim, bool keepdim = false);
+
+// ---- Reductions over all elements -----------------------------------------------------
+// 0-dim results, accumulated in float32. An empty tensor sums to 0; its mean is NaN.
+Tensor sum(const Tensor& a);
+Tensor mean(const Tensor& a);
+
+// Sums `a` down to `shape`, the inverse of broadcasting: `shape` must broadcast to
+// a.shape(). Leading dims are summed away and dims of size 1 in `shape` are summed with
+// keepdim, e.g. [4, 2, 3] -> [2, 1]. Returns `a` itself when the shapes are equal.
+Tensor sum_to(const Tensor& a, const Shape& shape);
 
 // ---- Softmax -------------------------------------------------------------------------
 // log(softmax(a)) along `dim`, computed as (a - max) - log(sum(exp(a - max))) so large

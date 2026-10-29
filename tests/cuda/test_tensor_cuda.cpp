@@ -10,8 +10,7 @@
 #include "flashgrad/core/tensor.h"
 #include "flashgrad/cuda/runtime.h"
 
-// CUDA tensors in Phase 1: allocation, views and host <-> device transfers. Compute ops
-// arrive in Phase 2 as CUDA kernels.
+// CUDA tensors: allocation, views, host <-> device transfers and copies between layouts.
 namespace {
 
 #define SKIP_IF_NO_CUDA() \
@@ -168,10 +167,53 @@ TEST(CudaTensor, ViewsKeepDevice) {
   EXPECT_TRUE(dev.cuda().is_same(dev));  // already there: no copy
 }
 
-TEST(CudaTensor, NonContiguousDeviceToDeviceCopyNeedsKernels) {
+TEST(CudaTensor, NonContiguousDeviceToDeviceCopy) {
   SKIP_IF_NO_CUDA();
-  EXPECT_THROW(flashgrad::zeros({3, 2}, {.device = Device::cuda()}).t().contiguous(),
-               flashgrad::Error);
+  const Tensor host = random_tensor({6, 8, 5}, 5);
+  const Tensor dev = host.cuda();
+  // Non-contiguous sources: the clone is contiguous and holds the view's values.
+  for (const Tensor& view : {dev.transpose(0, 2).clone(),
+                             dev.permute({2, 0, 1}).slice(1, 1, 6, 2).clone(),
+                             dev.select(1, 3).contiguous()}) {
+    EXPECT_TRUE(view.is_contiguous());
+  }
+  EXPECT_TRUE(same_values(dev.transpose(0, 2).clone().cpu(), host.transpose(0, 2).contiguous()));
+  EXPECT_TRUE(same_values(dev.permute({2, 0, 1}).slice(1, 1, 6, 2).contiguous().cpu(),
+                          host.permute({2, 0, 1}).slice(1, 1, 6, 2).contiguous()));
+  // reshape of a non-contiguous CUDA tensor copies.
+  EXPECT_TRUE(same_values(dev.transpose(0, 1).reshape({-1}).cpu(),
+                          host.transpose(0, 1).reshape({-1})));
+}
+
+TEST(CudaTensor, CopyIntoNonContiguousDeviceView) {
+  SKIP_IF_NO_CUDA();
+  const Tensor host = flashgrad::zeros({4, 6});
+  const Tensor dev = host.cuda();
+  const Tensor src = random_tensor({4, 3}, 6);
+  dev.slice(1, 0, 6, 2).copy_(src);         // CPU -> strided CUDA view
+  host.slice(1, 0, 6, 2).copy_(src);
+  EXPECT_TRUE(same_values(dev.cpu(), host));
+  dev.t().slice(0, 1, 6, 2).copy_(src.t().cuda());  // CUDA -> strided CUDA view
+  host.t().slice(0, 1, 6, 2).copy_(src.t());
+  EXPECT_TRUE(same_values(dev.cpu(), host));
+}
+
+TEST(CudaTensor, DeviceToDeviceCopyBroadcasts) {
+  SKIP_IF_NO_CUDA();
+  const Tensor dev = flashgrad::empty({2, 3}, {.device = Device::cuda()});
+  dev.copy_(flashgrad::tensor({1, 2, 3}).cuda());
+  EXPECT_EQ(dev.cpu().to_vector(), (std::vector<float>{1, 2, 3, 1, 2, 3}));
+  dev.copy_(flashgrad::full({}, 7.0).cuda());
+  EXPECT_EQ(dev.cpu().to_vector(), (std::vector<float>(6, 7)));
+}
+
+TEST(CudaTensor, CopyWithinOneStorage) {
+  SKIP_IF_NO_CUDA();
+  // The source overlaps the destination, so it's copied out first.
+  const Tensor host = flashgrad::tensor({1, 2, 3, 4}, {2, 2});
+  const Tensor dev = host.cuda();
+  dev.copy_(dev.t());
+  EXPECT_EQ(dev.cpu().to_vector(), (std::vector<float>{1, 3, 2, 4}));
 }
 
 }  // namespace

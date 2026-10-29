@@ -1,8 +1,10 @@
 #include "flashgrad/core/tensor_impl.h"
 
 #include <cstddef>
+#include <memory>
 #include <utility>
 
+#include "autograd/meta.h"
 #include "flashgrad/core/error.h"
 
 namespace flashgrad {
@@ -31,6 +33,13 @@ TensorImpl::TensorImpl(Storage storage, Shape shape, Strides strides, std::int64
              to_string(strides_), " and offset ", offset_, " needs ", last + 1,
              " elements, but the storage holds only ", capacity, " ", dtype_, " elements");
   }
+}
+
+TensorImpl::~TensorImpl() = default;
+
+autograd::AutogradMeta& TensorImpl::ensure_autograd_meta() {
+  if (!autograd_) autograd_ = std::make_unique<autograd::AutogradMeta>();
+  return *autograd_;
 }
 
 }  // namespace flashgrad

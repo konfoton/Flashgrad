@@ -1,9 +1,12 @@
 #include "flashgrad/core/ops.h"
 
 #include <cstdint>
+#include <vector>
 
+#include "autograd/function.h"
 #include "core/checks.h"
 #include "cuda/ops.h"
+#include "flashgrad/autograd/grad_mode.h"
 #include "flashgrad/core/error.h"
 #include "flashgrad/core/shape.h"
 
@@ -11,10 +14,13 @@ namespace flashgrad {
 
 namespace {
 
+using autograd::detail::needs_grad;
+using autograd::detail::record;
 using cuda::detail::BinaryOp;
 using cuda::detail::kMaxDims;
 using cuda::detail::ReduceOp;
 using cuda::detail::UnaryOp;
+using Grads = std::vector<Tensor>;
 
 void check_input(const char* op, const Tensor& t) {
   detail::check_defined(op, t);
@@ -38,6 +44,7 @@ Tensor binary(BinaryOp kind, const char* op, const Tensor& a, const Tensor& b) {
            " and ", describe(b));
   const Shape shape = broadcast_shapes(a.shape(), b.shape(), op);
   Tensor out = empty(shape, a.options());
+  const NoGradGuard no_grad;  // the expanded operands are internal, not part of the graph
   cuda::detail::binary(kind, out, a.expand(shape), b.expand(shape));
   return out;
 }
@@ -61,31 +68,199 @@ Tensor reduce(ReduceOp kind, const char* op, const Tensor& a, std::int64_t dim, 
 
 }  // namespace
 
-Tensor neg(const Tensor& a) { return unary(UnaryOp::Neg, "neg", a); }
-Tensor relu(const Tensor& a) { return unary(UnaryOp::Relu, "relu", a); }
-Tensor exp(const Tensor& a) { return unary(UnaryOp::Exp, "exp", a); }
-Tensor log(const Tensor& a) { return unary(UnaryOp::Log, "log", a); }
-Tensor sigmoid(const Tensor& a) { return unary(UnaryOp::Sigmoid, "sigmoid", a); }
-Tensor reciprocal(const Tensor& a) { return unary(UnaryOp::Reciprocal, "reciprocal", a); }
+// Each differentiable op computes its output, then records how to get the inputs' gradients
+// from the output's gradient g (see autograd/function.h). Gradients may keep the broadcast
+// shape of the output; the engine sums them back to each input's shape.
 
-Tensor add(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Add, "add", a, b); }
-Tensor sub(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Sub, "sub", a, b); }
-Tensor mul(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Mul, "mul", a, b); }
-Tensor div(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Div, "div", a, b); }
-Tensor maximum(const Tensor& a, const Tensor& b) {
-  return binary(BinaryOp::Maximum, "maximum", a, b);
+Tensor neg(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Neg, "neg", a);
+  if (needs_grad({a})) record(out, "neg", {a}, [](const Tensor& g) { return Grads{-g}; });
+  return out;
 }
+
+// The gradient passes where a > 0 and is 0 elsewhere, including at a == 0.
+Tensor relu(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Relu, "relu", a);
+  if (needs_grad({a})) {
+    record(out, "relu", {a}, [a = a.detach()](const Tensor& g) {
+      return Grads{g * lt(zeros({}, a.options()), a)};
+    });
+  }
+  return out;
+}
+
+Tensor exp(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Exp, "exp", a);
+  if (needs_grad({a})) {
+    record(out, "exp", {a}, [out = out.detach()](const Tensor& g) { return Grads{g * out}; });
+  }
+  return out;
+}
+
+Tensor log(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Log, "log", a);
+  if (needs_grad({a})) {
+    record(out, "log", {a}, [a = a.detach()](const Tensor& g) { return Grads{g / a}; });
+  }
+  return out;
+}
+
+// d sigmoid(a) = g * s * (1 - s) with s = sigmoid(a), the saved output.
+Tensor sigmoid(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Sigmoid, "sigmoid", a);
+  if (needs_grad({a})) {
+    record(out, "sigmoid", {a}, [s = out.detach()](const Tensor& g) {
+      return Grads{g * s * (1.0f - s)};
+    });
+  }
+  return out;
+}
+
+// d (1 / a) = -g / a^2 = -g * out^2.
+Tensor reciprocal(const Tensor& a) {
+  Tensor out = unary(UnaryOp::Reciprocal, "reciprocal", a);
+  if (needs_grad({a})) {
+    record(out, "reciprocal", {a}, [out = out.detach()](const Tensor& g) {
+      return Grads{-(g * out * out)};
+    });
+  }
+  return out;
+}
+
+Tensor add(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Add, "add", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "add", {a, b}, [](const Tensor& g) { return Grads{g, g}; });
+  }
+  return out;
+}
+
+Tensor sub(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Sub, "sub", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "sub", {a, b}, [](const Tensor& g) { return Grads{g, -g}; });
+  }
+  return out;
+}
+
+Tensor mul(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Mul, "mul", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "mul", {a, b},
+           [a = a.detach(), b = b.detach(), need_a = a.requires_grad(),
+            need_b = b.requires_grad()](const Tensor& g) {
+             return Grads{need_a ? g * b : Tensor(), need_b ? g * a : Tensor()};
+           });
+  }
+  return out;
+}
+// For out = a / b: g / b for a, and -g * a / b^2 = -g * out / b for b.
+Tensor div(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Div, "div", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "div", {a, b},
+           [b = b.detach(), out = out.detach(), need_a = a.requires_grad(),
+            need_b = b.requires_grad()](const Tensor& g) {
+             return Grads{need_a ? g / b : Tensor(), need_b ? -(g * out) / b : Tensor()};
+           });
+  }
+  return out;
+}
+// The gradient goes to the larger input; on a tie each input gets half.
+Tensor maximum(const Tensor& a, const Tensor& b) {
+  Tensor out = binary(BinaryOp::Maximum, "maximum", a, b);
+  if (needs_grad({a, b})) {
+    record(out, "maximum", {a, b}, [a = a.detach(), b = b.detach()](const Tensor& g) {
+      const Tensor half_tie = eq(a, b) * 0.5f;
+      return Grads{g * (lt(b, a) + half_tie), g * (lt(a, b) + half_tie)};
+    });
+  }
+  return out;
+}
+// Comparisons are piecewise constant: their gradient is zero, so they aren't recorded.
 Tensor lt(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Lt, "lt", a, b); }
 Tensor eq(const Tensor& a, const Tensor& b) { return binary(BinaryOp::Eq, "eq", a, b); }
 
+// Every element of a row contributes once, so the gradient is g broadcast back along `dim`.
 Tensor sum(const Tensor& a, std::int64_t dim, bool keepdim) {
-  return reduce(ReduceOp::Sum, "sum", a, dim, keepdim);
+  Tensor out = reduce(ReduceOp::Sum, "sum", a, dim, keepdim);
+  if (needs_grad({a})) {
+    const std::int64_t d = normalize_dim(dim, a.dim(), "sum");
+    record(out, "sum", {a}, [shape = a.shape(), d, keepdim](const Tensor& g) {
+      return Grads{(keepdim ? g : g.unsqueeze(d)).expand(shape)};
+    });
+  }
+  return out;
 }
+// The gradient of a row's product for one element is the product of the other elements.
+// out / a would divide by zero, so zeros are counted per row instead: with no zero it is
+// out / a; with one zero, only the zero element gets a gradient, the product of the rest;
+// with more, every gradient is 0.
 Tensor prod(const Tensor& a, std::int64_t dim, bool keepdim) {
-  return reduce(ReduceOp::Prod, "prod", a, dim, keepdim);
+  Tensor out = reduce(ReduceOp::Prod, "prod", a, dim, keepdim);
+  if (needs_grad({a})) {
+    const std::int64_t d = normalize_dim(dim, a.dim(), "prod");
+    record(out, "prod", {a}, [a = a.detach(), d, keepdim](const Tensor& g) {
+      const Tensor zero = zeros({}, a.options());
+      const Tensor is_zero = eq(a, zero);
+      const Tensor nonzero = a + is_zero;  // zeros replaced by ones
+      const Tensor nonzero_prod = prod(nonzero, d, /*keepdim=*/true);
+      const Tensor zero_count = sum(is_zero, d, /*keepdim=*/true);
+      const Tensor no_zero = eq(zero_count, zero);
+      const Tensor one_zero = eq(zero_count, ones({}, a.options()));
+      const Tensor others = (1.0f - is_zero) * no_zero * nonzero_prod / nonzero +
+                            is_zero * one_zero * nonzero_prod;
+      return Grads{(keepdim ? g : g.unsqueeze(d)) * others};
+    });
+  }
+  return out;
 }
+// The gradient goes to the elements equal to the row's max, split evenly between ties.
 Tensor max(const Tensor& a, std::int64_t dim, bool keepdim) {
-  return reduce(ReduceOp::Max, "max", a, dim, keepdim);
+  Tensor out = reduce(ReduceOp::Max, "max", a, dim, keepdim);
+  if (needs_grad({a})) {
+    const std::int64_t d = normalize_dim(dim, a.dim(), "max");
+    record(out, "max", {a}, [a = a.detach(), out = out.detach(), d, keepdim](const Tensor& g) {
+      const Tensor is_max = eq(a, keepdim ? out : out.unsqueeze(d));
+      const Tensor share = is_max / sum(is_max, d, /*keepdim=*/true);
+      return Grads{(keepdim ? g : g.unsqueeze(d)) * share};
+    });
+  }
+  return out;
+}
+
+Tensor sum(const Tensor& a) {
+  check_input("sum", a);
+  Tensor out = empty({}, a.options());
+  cuda::detail::reduce_all(ReduceOp::Sum, out, a);
+  if (needs_grad({a})) {
+    record(out, "sum", {a},
+           [shape = a.shape()](const Tensor& g) { return Grads{g.expand(shape)}; });
+  }
+  return out;
+}
+
+Tensor mean(const Tensor& a) { return sum(a) / static_cast<float>(a.numel()); }
+
+Tensor mean(const Tensor& a, std::int64_t dim, bool keepdim) {
+  check_input("mean", a);
+  const std::int64_t n = a.size(normalize_dim(dim, a.dim(), "mean"));
+  return sum(a, dim, keepdim) / static_cast<float>(n);
+}
+
+Tensor sum_to(const Tensor& a, const Shape& shape) {
+  check_input("sum_to", a);
+  FG_CHECK(broadcast_shapes(shape, a.shape(), "sum_to") == a.shape(), "sum_to: ", describe(a),
+           " is not a broadcast of shape ", to_string(shape));
+  Tensor out = a;
+  const auto lead = a.dim() - static_cast<std::int64_t>(shape.size());
+  for (std::int64_t d = 0; d < lead; ++d) out = sum(out, 0);
+  for (std::size_t d = 0; d < shape.size(); ++d) {
+    if (shape[d] == 1 && out.size(static_cast<std::int64_t>(d)) != 1) {
+      out = sum(out, static_cast<std::int64_t>(d), /*keepdim=*/true);
+    }
+  }
+  return out;
 }
 
 Tensor log_softmax(const Tensor& a, std::int64_t dim) {
@@ -93,6 +268,13 @@ Tensor log_softmax(const Tensor& a, std::int64_t dim) {
   const std::int64_t d = normalize_dim(dim, a.dim(), "log_softmax");
   Tensor out = empty(a.shape(), a.options());
   cuda::detail::log_softmax(out, a, d);
+  // With p = softmax(a) = exp(out): d out_i / d a_j = [i == j] - p_j, so the gradient is
+  // g - p * sum(g) along the row.
+  if (needs_grad({a})) {
+    record(out, "log_softmax", {a}, [out = out.detach(), d](const Tensor& g) {
+      return Grads{g - exp(out) * sum(g, d, /*keepdim=*/true)};
+    });
+  }
   return out;
 }
 
@@ -107,6 +289,16 @@ Tensor matmul(const Tensor& a, const Tensor& b) {
            " and ", describe(b));
   Tensor out = empty({a.size(0), b.size(1)}, a.options());
   cuda::detail::matmul(out, a, b);
+  // For out = a @ b: g @ b^T for a and a^T @ g for b. The transposes are views, which the
+  // kernel reads through their strides.
+  if (needs_grad({a, b})) {
+    record(out, "matmul", {a, b},
+           [a = a.detach(), b = b.detach(), need_a = a.requires_grad(),
+            need_b = b.requires_grad()](const Tensor& g) {
+             return Grads{need_a ? matmul(g, b.t()) : Tensor(),
+                          need_b ? matmul(a.t(), g) : Tensor()};
+           });
+  }
   return out;
 }
 

@@ -17,6 +17,10 @@
 
 namespace flashgrad {
 
+namespace autograd {
+class Node;
+}  // namespace autograd
+
 struct TensorOptions {
   DType dtype = DType::Float32;
   Device device = Device::cpu();
@@ -66,6 +70,7 @@ class Tensor {
   std::vector<float> to_vector() const;
 
   // ---- Views (share storage, never copy) ---------------------------------------------
+  // Not differentiable: throws for a tensor that requires grad (with grad mode on).
   Tensor as_strided(Shape shape, Strides strides, std::int64_t offset) const;
   // One dimension may be -1 and is inferred. Throws if the strides don't allow a view.
   Tensor view(Shape shape) const;
@@ -97,13 +102,39 @@ class Tensor {
   Tensor cpu() const { return to(Device::cpu()); }
   Tensor cuda(int index = 0) const { return to(Device::cuda(index)); }
 
+  // ---- Autograd ----------------------------------------------------------------------
+  // A leaf is a tensor that wasn't computed by a recorded op: created by the user, or
+  // computed with grad mode off. Leaves that require grad get their gradient in grad()
+  // after backward; outputs of recorded ops always require grad and have a grad_fn.
+  bool requires_grad() const;
+  // Sets requires_grad on a leaf; returns *this, e.g. randn(...).requires_grad_().
+  const Tensor& requires_grad_(bool requires_grad = true) const;
+  bool is_leaf() const;
+  // The node that computed this tensor; null for leaves.
+  std::shared_ptr<autograd::Node> grad_fn() const;
+  // The gradient accumulated by backward (leaves only); undefined before the first backward.
+  Tensor grad() const;
+  // Replaces the gradient; an undefined tensor clears it.
+  void set_grad(const Tensor& grad) const;
+  // The same data without autograd history: a leaf that doesn't require grad.
+  Tensor detach() const;
+  // Computes the gradients of this tensor with respect to the leaves that require grad and
+  // adds them to their grad(). `gradient` is the gradient of this tensor; it may be omitted
+  // for a tensor with one element (it is then 1). The graph's saved tensors are freed
+  // afterwards unless `retain_graph` is set. Gradients are first order only: backward
+  // itself is never recorded.
+  void backward(const Tensor& gradient = Tensor(), bool retain_graph = false) const;
+
   // ---- In-place ----------------------------------------------------------------------
+  // Not recorded by autograd: with grad mode on, they throw when this tensor or the source
+  // requires grad. Parameter updates go inside a NoGradGuard.
   // Copies `src` (broadcast to shape()) into this tensor, moving data between devices as
   // needed.
   const Tensor& copy_(const Tensor& src) const;
   const Tensor& fill_(double value) const;  // value is rounded to float
   const Tensor& zero_() const { return fill_(0.0); }
-  // Elementwise in-place arithmetic; `other` must broadcast to shape().
+  // Elementwise in-place arithmetic on CUDA tensors; `other` must broadcast to shape().
+  // Computed into a new tensor, then copied back.
   const Tensor& add_(const Tensor& other) const;
   const Tensor& sub_(const Tensor& other) const;
   const Tensor& mul_(const Tensor& other) const;

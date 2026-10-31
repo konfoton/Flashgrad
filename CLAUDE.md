@@ -39,7 +39,8 @@ kernels, also run `compute-sanitizer` on the relevant tests.
 ## Layout
 
 ```
-include/flashgrad/   public headers (core/, cuda/, later nn/, optim/)
+include/flashgrad/   public headers (autograd/, core/, cuda/, later nn/, optim/)
+src/autograd/        graph recording (function.h) and the backward engine
 src/core/            device-independent implementation
 src/cpu/             host-side copy/fill for CPU tensors (no compute ops)
 src/cuda/            CUDA kernels (.cu) and runtime helpers
@@ -75,6 +76,10 @@ Don't start a phase before the previous phase's milestone works and is tested.
   streams needs stream-aware freeing first.
 - **Kernels:** use grid-stride loops or explicit bounds checks; use 64-bit indices
   (`std::int64_t`) for element counts and offsets; mark non-aliasing pointers `__restrict__`.
+- **Autograd:** a differentiable op computes its output, then
+  `if (needs_grad({inputs})) record(out, "name", {inputs}, backward)` (`src/autograd/function.h`).
+  Tensors saved in the backward lambda must be `detach()`ed (a saved output would own its own
+  node), and backward lambdas build on the other ops; they run with grad mode off.
 - **Asynchrony:** library ops must not call `cudaDeviceSynchronize`; synchronize only when
   results go back to the host (`item()`, copy to CPU).
 - **Design for later phases now:** tensors are strided views from the start (shape, strides,
@@ -91,6 +96,6 @@ Don't start a phase before the previous phase's milestone works and is tested.
   broadcasting. Add each op's reference together with its kernel.
 - Use exact comparison only where it's guaranteed (single fp32 ops); otherwise use
   relative + absolute tolerance.
-- Autograd ops (Phase 4+) also need a finite-difference gradient check (in `float64`, using
-  the test reference on the host).
+- Autograd ops (Phase 4+) also need a finite-difference gradient check (`tests/gradcheck.h`:
+  in `float64`, using the test reference on the host).
 - GPU tests must call `GTEST_SKIP()` when `flashgrad::cuda::is_available()` is false.

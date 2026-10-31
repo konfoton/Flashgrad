@@ -2,6 +2,8 @@
 
 // Umbrella header: everything a user of the library needs.
 
+#include "flashgrad/autograd/grad_mode.h"
+#include "flashgrad/autograd/node.h"
 #include "flashgrad/core/device.h"
 #include "flashgrad/core/dtype.h"
 #include "flashgrad/core/error.h"

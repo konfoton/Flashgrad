@@ -41,7 +41,7 @@ void print_values(std::ostream& os, const float* data, const Shape& shape, const
 
 std::ostream& operator<<(std::ostream& os, const Tensor& t) {
   if (!t.defined()) return os << "tensor(undefined)";
-  const Tensor host = t.cpu();
+  const Tensor host = t.detach().cpu();
   os << "tensor(";
   if (host.numel() == 0) {
     os << "[], shape=" << to_string(host.shape());

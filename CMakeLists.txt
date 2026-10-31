@@ -55,6 +55,11 @@ endif()
 # Library
 # ---------------------------------------------------------------------------
 add_library(flashgrad
+  src/autograd/engine.cpp
+  src/autograd/function.cpp
+  src/autograd/grad_mode.cpp
+  src/autograd/node.cpp
+  src/autograd/tensor_autograd.cpp
   src/core/allocator.cpp
   src/core/device.cpp
   src/core/dtype.cpp
@@ -66,7 +71,7 @@ add_library(flashgrad
   src/core/shape.cpp
   src/core/storage.cpp
   src/core/tensor.cpp
-  src/core/tensor_impl.cpp
+  src/core/tensor_view.cpp
   src/cpu/ops.cpp
   src/cuda/caching_allocator.cpp
   src/cuda/elementwise.cu

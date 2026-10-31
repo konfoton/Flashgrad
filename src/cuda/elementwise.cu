@@ -172,6 +172,7 @@ void unary(UnaryOp op, const Tensor& out, const Tensor& a, Stream stream) {
   if (out.numel() == 0) return;
   DeviceGuard guard(out.device().index());
   switch (op) {
+    case UnaryOp::Identity: return launch_map(IdentityFn{}, out, a, stream);
     case UnaryOp::Neg: return launch_map(NegFn{}, out, a, stream);
     case UnaryOp::Relu: return launch_map(ReluFn{}, out, a, stream);
     case UnaryOp::Exp: return launch_map(ExpFn{}, out, a, stream);

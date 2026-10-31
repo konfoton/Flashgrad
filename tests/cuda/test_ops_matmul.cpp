@@ -15,29 +15,27 @@ namespace {
   if (!flashgrad::cuda::is_available()) GTEST_SKIP() << "no CUDA device available"
 
 namespace fg = flashgrad;
-using fg::Shape;
 using fg::Tensor;
 
-// Compares matmul(a, b) with the reference. float32 accumulation drifts with k, and the
-// products of standard normals sum to values of size ~sqrt(k).
+// Compares matmul(a, b) with the reference. float32 accumulation drifts with K.
 void check(const Tensor& a, const Tensor& b) {
   const std::int64_t m = a.size(0), k = a.size(1), n = b.size(1);
+  const std::vector<float> expected = ref::matmul(a.to_vector(), b.to_vector(), m, k, n);
   const Tensor out = fg::matmul(a, b);
-  EXPECT_EQ(out.shape(), (Shape{m, n}));
+  EXPECT_EQ(out.shape(), (fg::Shape{m, n}));
   EXPECT_TRUE(out.device().is_cuda());
   EXPECT_TRUE(out.is_contiguous());
-  const double tol = 2e-7 * static_cast<double>(k + 1);
-  EXPECT_TRUE(ref::close(out.to_vector(), ref::matmul(a.to_vector(), b.to_vector(), m, k, n),
-                         tol, tol))
+  EXPECT_TRUE(ref::close(out.to_vector(), expected, 1e-5, 2e-6 * static_cast<double>(k)))
       << fg::describe(a) << " @ " << fg::describe(b);
 }
 
-TEST(MatmulOp, SizesAroundTheTileSize) {
+TEST(MatmulOps, SizesAroundTiles) {
   SKIP_IF_NO_CUDA();
   std::uint64_t seed = 1;
-  for (const std::int64_t m : {1, 15, 16, 17, 64}) {
-    for (const std::int64_t k : {1, 16, 33}) {
-      for (const std::int64_t n : {1, 16, 31}) {
+  // Block tile is 64 x 64 with K steps of 8; float4 paths need K and N multiples of 4.
+  for (const std::int64_t m : {1, 7, 64, 65, 130}) {
+    for (const std::int64_t k : {1, 3, 4, 8, 9, 64, 100}) {
+      for (const std::int64_t n : {1, 5, 8, 63, 64, 129}) {
         check(ref::random_cuda({m, k}, seed), ref::random_cuda({k, n}, seed + 1));
         seed += 2;
       }
@@ -45,38 +43,15 @@ TEST(MatmulOp, SizesAroundTheTileSize) {
   }
 }
 
-TEST(MatmulOp, LargerShapes) {
+TEST(MatmulOps, Large) {
   SKIP_IF_NO_CUDA();
-  check(ref::random_cuda({129, 1000}, 1), ref::random_cuda({1000, 70}, 2));  // long k
-  check(ref::random_cuda({3000, 8}, 3), ref::random_cuda({8, 300}, 4));      // many tiles
-  check(ref::random_cuda({1, 5000}, 5), ref::random_cuda({5000, 1}, 6));     // dot product
+  check(ref::random_cuda({300, 1024}, 10), ref::random_cuda({1024, 260}, 11));  // float4 paths
+  check(ref::random_cuda({257, 513}, 12), ref::random_cuda({513, 255}, 13));    // scalar paths
+  check(ref::random_cuda({3000, 8}, 14), ref::random_cuda({8, 300}, 15));       // many tiles
+  check(ref::random_cuda({1, 5000}, 16), ref::random_cuda({5000, 1}, 17));      // dot product
 }
 
-TEST(MatmulOp, NonContiguousInputs) {
-  SKIP_IF_NO_CUDA();
-  const Tensor a_t = ref::random_cuda({37, 20}, 1).t();  // [20, 37], column-major
-  const Tensor b_t = ref::random_cuda({18, 37}, 2).t();  // [37, 18]
-  ASSERT_FALSE(a_t.is_contiguous());
-  check(a_t, b_t);
-  const Tensor a_sliced = ref::random_cuda({40, 50}, 3).slice(0, 1, 40, 2).slice(1, 3, 50, 3);
-  check(a_sliced, ref::random_cuda({a_sliced.size(1), 9}, 4));
-  check(ref::random_cuda({5, 1}, 5).expand({5, 21}), ref::random_cuda({21, 1}, 6).expand({21, 3}));
-}
-
-TEST(MatmulOp, EmptyInnerDimensionGivesZeros) {
-  SKIP_IF_NO_CUDA();
-  const Tensor a = fg::empty({3, 0}, {.device = fg::Device::cuda()});
-  const Tensor b = fg::empty({0, 4}, {.device = fg::Device::cuda()});
-  EXPECT_TRUE(ref::close(fg::matmul(a, b).to_vector(), std::vector<float>(12, 0.0f)));
-}
-
-TEST(MatmulOp, EmptyOutput) {
-  SKIP_IF_NO_CUDA();
-  check(ref::random_cuda({0, 5}, 1), ref::random_cuda({5, 3}, 2));
-  check(ref::random_cuda({4, 5}, 3), ref::random_cuda({5, 0}, 4));
-}
-
-TEST(MatmulOp, SmallExactValues) {
+TEST(MatmulOps, SmallExactValues) {
   SKIP_IF_NO_CUDA();
   const fg::Device gpu = fg::Device::cuda();
   const Tensor a = fg::tensor({1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f}, {2, 3}, gpu);
@@ -84,14 +59,50 @@ TEST(MatmulOp, SmallExactValues) {
   EXPECT_EQ(fg::matmul(a, b).to_vector(), (std::vector<float>{58.0f, 64.0f, 139.0f, 154.0f}));
 }
 
-TEST(MatmulOp, RejectsInvalidInputs) {
+TEST(MatmulOps, TransposedInputs) {
+  SKIP_IF_NO_CUDA();
+  const Tensor a = ref::random_cuda({48, 70}, 20);
+  const Tensor b = ref::random_cuda({36, 48}, 21);
+  ASSERT_FALSE(a.t().is_contiguous());
+  check(a.t(), b.t());                    // [70, 48] @ [48, 36]
+  check(a.t(), ref::random_cuda({48, 32}, 22));
+  check(ref::random_cuda({33, 36}, 23), b);
+  check(b, a);
+}
+
+TEST(MatmulOps, StridedAndMisalignedInputs) {
+  SKIP_IF_NO_CUDA();
+  // Offset by one element: rows are unit-stride with stride % 4 == 0 but not 16-byte aligned.
+  const Tensor a = ref::random_cuda({40, 69}, 30).slice(1, 1);
+  const Tensor b = ref::random_cuda({68, 41}, 31).slice(1, 1);
+  check(a, b);
+  // Every other column and row.
+  const Tensor c = ref::random_cuda({80, 64}, 32).slice(0, 0, 80, 2).slice(1, 0, 64, 2);
+  const Tensor d = ref::random_cuda({64, 50}, 33).slice(0, 0, 64, 2);
+  check(c, d);
+  // Expanded rows and columns (stride 0).
+  check(ref::random_cuda({1, 16}, 34).expand({20, 16}),
+        ref::random_cuda({16, 1}, 35).expand({16, 12}));
+}
+
+TEST(MatmulOps, EmptyDims) {
+  SKIP_IF_NO_CUDA();
+  const fg::TensorOptions gpu{.device = fg::Device::cuda()};
+  EXPECT_EQ(fg::matmul(fg::empty({0, 5}, gpu), fg::ones({5, 3}, gpu)).shape(), (fg::Shape{0, 3}));
+  EXPECT_EQ(fg::matmul(fg::ones({4, 5}, gpu), fg::empty({5, 0}, gpu)).shape(), (fg::Shape{4, 0}));
+  // K == 0 gives zeros.
+  const Tensor z = fg::matmul(fg::empty({70, 0}, gpu), fg::empty({0, 66}, gpu));
+  EXPECT_TRUE(ref::close(z.to_vector(), std::vector<float>(70 * 66, 0.0f)));
+}
+
+TEST(MatmulOps, RejectsInvalidInputs) {
   SKIP_IF_NO_CUDA();
   const fg::TensorOptions gpu{.device = fg::Device::cuda()};
   EXPECT_THROW(fg::matmul(fg::ones({2, 3}, gpu), fg::ones({4, 2}, gpu)), fg::Error);
   EXPECT_THROW(fg::matmul(fg::ones({3}, gpu), fg::ones({3, 2}, gpu)), fg::Error);
   EXPECT_THROW(fg::matmul(fg::ones({2, 2, 3}, gpu), fg::ones({3, 2}, gpu)), fg::Error);
   EXPECT_THROW(fg::matmul(fg::ones({2, 3}), fg::ones({3, 2})), fg::Error);  // CPU tensors
-  EXPECT_THROW(fg::matmul(fg::ones({2, 3}, gpu), Tensor()), fg::Error);
+  EXPECT_THROW(fg::matmul(fg::ones({2, 3}, gpu), fg::ones({3, 2})), fg::Error);
 }
 
 }  // namespace

@@ -19,7 +19,7 @@ using Stream = CUstream_st*;  // nullptr is the default stream
 inline constexpr std::int64_t kMaxDims = 8;
 inline constexpr std::int64_t kMaxBlocks = 0x7fffffff;
 
-enum class UnaryOp { Neg, Relu, Exp, Log, Sigmoid, Reciprocal };
+enum class UnaryOp { Identity, Neg, Relu, Exp, Log, Sigmoid, Reciprocal };  // Identity copies
 enum class BinaryOp { Add, Sub, Mul, Div, Maximum, Lt, Eq };
 enum class ReduceOp { Sum, Prod, Max };
 
@@ -46,7 +46,7 @@ void reduce(ReduceOp op, const Tensor& out, const Tensor& a, std::int64_t dim,
 // Reduces all elements of `a` into the 0-dim `out`; an empty `a` gives the op's identity.
 void reduce_all(ReduceOp op, const Tensor& out, const Tensor& a, Stream stream = nullptr);
 
-// out = a @ b for 2-D `a` [m, k] and `b` [k, n]; `out` is [m, n] and contiguous.
+// out = a @ b for 2-D `a` [M, K] and `b` [K, N]; `out` is [M, N]. K may be 0 (out is zeroed).
 void matmul(const Tensor& out, const Tensor& a, const Tensor& b, Stream stream = nullptr);
 
 // out = log_softmax(a) along `dim`; `out` has the shape of `a`.

@@ -70,17 +70,11 @@ loss.backward();                                      // w.grad() is [10, 3]
 
 Tensors are strided views (shape, strides, offset) into reference-counted storage, like
 PyTorch, and are all float32 for now. CPU tensors hold host data (creation, printing,
-transfers); all math ops run as CUDA kernels: elementwise ops (neg, relu, exp, log, sigmoid,
-reciprocal, add, sub, mul, div, maximum, lt, eq, with broadcasting and `+ - * /` operators,
-scalars included), reductions over one dimension (sum, prod, max, mean) and over all elements
-(sum, mean), log_softmax and a shared-memory tiled matmul for 2-D tensors; see
-`include/flashgrad/core/ops.h`.
-
-Every op and view except the comparisons and `as_strided` is differentiable. Ops on tensors
-that require grad record a graph of nodes (`include/flashgrad/autograd/node.h`), and
-`backward()` walks it in topological order, adding the gradients to the leaves' `grad()`.
-Gradients are first order only, and in-place ops throw on tensors that require grad unless
-grad mode is off (`NoGradGuard`).
+transfers); all math ops run as CUDA kernels. Phase 2 so far has elementwise ops (neg, relu,
+exp, log, sigmoid, reciprocal, add, sub, mul, div, maximum, lt, eq, with broadcasting and
+`+ - * /` operators, scalars included), reductions over one dimension (sum, prod, max), log_softmax
+and a shared-memory tiled matmul with register tiles and float4 loads;
+inputs are padded to rows of a multiple of 4 floats when needed; see `include/flashgrad/core/ops.h`.
 
 ## Debugging and profiling
 

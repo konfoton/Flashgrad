@@ -81,6 +81,7 @@ add_library(flashgrad
   src/cuda/runtime.cpp
   src/cuda/softmax.cu
   src/cuda/smoke.cu
+  src/nn/functional.cpp
 )
 add_library(flashgrad::flashgrad ALIAS flashgrad)
 

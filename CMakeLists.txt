@@ -32,6 +32,7 @@ endif()
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(CUDAToolkit REQUIRED)
+find_package(Threads REQUIRED)
 
 # ---------------------------------------------------------------------------
 # Shared compile settings (applied to every flashgrad target)
@@ -81,6 +82,7 @@ add_library(flashgrad
   src/cuda/runtime.cpp
   src/cuda/softmax.cu
   src/cuda/smoke.cu
+  src/data/dataloader.cpp
   src/data/dataset.cpp
 )
 add_library(flashgrad::flashgrad ALIAS flashgrad)
@@ -90,8 +92,7 @@ target_include_directories(flashgrad
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src  # internal headers: core/, cpu/, cuda/
 )
 target_link_libraries(flashgrad
-  PUBLIC  CUDA::cudart
-
+  PUBLIC  CUDA::cudart Threads::Threads
   PRIVATE flashgrad_options
 )
 set_target_properties(flashgrad PROPERTIES

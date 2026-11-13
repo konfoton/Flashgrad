@@ -81,6 +81,7 @@ add_library(flashgrad
   src/cuda/runtime.cpp
   src/cuda/softmax.cu
   src/cuda/smoke.cu
+  src/data/dataset.cpp
 )
 add_library(flashgrad::flashgrad ALIAS flashgrad)
 
@@ -90,6 +91,7 @@ target_include_directories(flashgrad
 )
 target_link_libraries(flashgrad
   PUBLIC  CUDA::cudart
+
   PRIVATE flashgrad_options
 )
 set_target_properties(flashgrad PROPERTIES

@@ -41,6 +41,8 @@ cmake --build build-debug -j
 | `FLASHGRAD_BUILD_EXAMPLES` | `ON` | Build example programs |
 | `FLASHGRAD_SYNC_KERNELS` | `OFF` | `cudaDeviceSynchronize` after each kernel |
 | `FLASHGRAD_WERROR` | `ON` | Treat host compiler warnings as errors |
+| `FLASHGRAD_DOWNLOAD_MNIST` | `ON` | Download MNIST into `FLASHGRAD_MNIST_DIR` when building (skipped with a warning when offline) |
+| `FLASHGRAD_MNIST_DIR` | `datasets/mnist` | Where the unpacked MNIST files live |
 
 ## Usage
 

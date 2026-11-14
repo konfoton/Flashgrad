@@ -9,6 +9,9 @@ option(FLASHGRAD_BUILD_TESTS    "Build unit tests"                              
 option(FLASHGRAD_BUILD_EXAMPLES "Build example executables"                       ON)
 option(FLASHGRAD_SYNC_KERNELS   "Synchronize after every kernel launch (debug)"   OFF)
 option(FLASHGRAD_WERROR         "Treat host compiler warnings as errors"          ON)
+option(FLASHGRAD_DOWNLOAD_MNIST "Download the MNIST dataset when building"        ON)
+set(FLASHGRAD_MNIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/datasets/mnist" CACHE PATH
+    "Directory of the unpacked MNIST files (used by the examples)")
 
 # ---------------------------------------------------------------------------
 # Language standards
@@ -102,6 +105,19 @@ set_target_properties(flashgrad PROPERTIES
 target_compile_definitions(flashgrad PUBLIC
   FLASHGRAD_VERSION_STRING="${PROJECT_VERSION}"
 )
+
+# ---------------------------------------------------------------------------
+# Datasets
+# ---------------------------------------------------------------------------
+# Fetched as part of every build (a no-op once the files are there). Kept in the source tree,
+# git-ignored, so all build directories share one copy.
+if(FLASHGRAD_DOWNLOAD_MNIST)
+  add_custom_target(mnist ALL
+    COMMAND ${CMAKE_COMMAND} -DMNIST_DIR=${FLASHGRAD_MNIST_DIR}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/DownloadMnist.cmake
+    VERBATIM
+  )
+endif()
 
 # ---------------------------------------------------------------------------
 # Subprojects

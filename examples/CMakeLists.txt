@@ -9,3 +9,7 @@ target_link_libraries(ops_basics PRIVATE flashgrad::flashgrad flashgrad_options)
 
 add_executable(autograd_basics autograd_basics.cpp)
 target_link_libraries(autograd_basics PRIVATE flashgrad::flashgrad flashgrad_options)
+
+add_executable(dataloader_basics dataloader_basics.cpp)
+target_link_libraries(dataloader_basics PRIVATE flashgrad::flashgrad flashgrad_options)
+target_compile_definitions(dataloader_basics PRIVATE FLASHGRAD_MNIST_DIR="${FLASHGRAD_MNIST_DIR}")

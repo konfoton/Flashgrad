@@ -15,3 +15,4 @@
 #include "flashgrad/cuda/allocator.h"
 #include "flashgrad/cuda/runtime.h"
 #include "flashgrad/nn/functional.h"
+#include "flashgrad/nn/module.h"

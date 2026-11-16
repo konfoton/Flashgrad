@@ -22,6 +22,7 @@ ctest --test-dir build --output-on-failure
 ./build/examples/tensor_basics
 ./build/examples/ops_basics
 ./build/examples/autograd_basics
+./build/examples/mlp_basics
 ```
 
 Debug build (device debug info + synchronize after every kernel launch, so CUDA
@@ -98,11 +99,15 @@ include/flashgrad/   public headers
   autograd/          grad mode, graph nodes
   core/              error handling, dtype, device, storage, tensor, ops
   cuda/              CUDA runtime helpers, error checks, timers, allocator
+  nn/                modules (Module, Linear, Sequential, MLP, activations, Dropout), losses
+  optim/             optimizers (SGD, Adam/AdamW)
 src/
   autograd/          recording, backward engine
   core/              core implementation
   cpu/               host-side copy/fill for CPU tensors
   cuda/              CUDA kernels (.cu)
+  nn/                nn modules and losses
+  optim/             optimizers
 tests/               GoogleTest unit tests
 examples/            small programs using the library
 benchmarks/          kernel benchmarks
@@ -115,7 +120,7 @@ benchmarks/          kernel benchmarks
 - [x] Phase 2 — CUDA kernels (elementwise, reductions, matmul, softmax)
 - [x] Phase 3 — caching allocator
 - [x] Phase 4 — autograd
-- [ ] Phase 5 — `nn` modules
+- [x] Phase 5 — `nn` modules
 - [ ] Phase 6 — optimizers, data loading (MNIST)
 - [ ] Phase 7 — Conv2d, fused kernels (CIFAR-10)
 - [ ] Phase 8 — FlashAttention, mixed precision, tiny GPT

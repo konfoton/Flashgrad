@@ -13,3 +13,6 @@ target_link_libraries(autograd_basics PRIVATE flashgrad::flashgrad flashgrad_opt
 add_executable(dataloader_basics dataloader_basics.cpp)
 target_link_libraries(dataloader_basics PRIVATE flashgrad::flashgrad flashgrad_options)
 target_compile_definitions(dataloader_basics PRIVATE FLASHGRAD_MNIST_DIR="${FLASHGRAD_MNIST_DIR}")
+
+add_executable(mlp_basics mlp_basics.cpp)
+target_link_libraries(mlp_basics PRIVATE flashgrad::flashgrad flashgrad_options)

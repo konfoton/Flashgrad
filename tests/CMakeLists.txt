@@ -41,6 +41,8 @@ add_executable(flashgrad_tests
   nn/test_loss.cpp
   nn/test_module.cpp
   nn/test_sequential.cpp
+  optim/test_adam.cpp
+  optim/test_sgd.cpp
 )
 target_include_directories(flashgrad_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(flashgrad_tests PRIVATE

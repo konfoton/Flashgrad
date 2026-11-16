@@ -88,6 +88,9 @@ add_library(flashgrad
   src/nn/loss.cpp
   src/nn/module.cpp
   src/nn/sequential.cpp
+  src/optim/adam.cpp
+  src/optim/optimizer.cpp
+  src/optim/sgd.cpp
 )
 add_library(flashgrad::flashgrad ALIAS flashgrad)
 

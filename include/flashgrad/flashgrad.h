@@ -21,3 +21,6 @@
 #include "flashgrad/nn/loss.h"
 #include "flashgrad/nn/module.h"
 #include "flashgrad/nn/sequential.h"
+#include "flashgrad/optim/adam.h"
+#include "flashgrad/optim/optimizer.h"
+#include "flashgrad/optim/sgd.h"

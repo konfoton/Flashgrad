@@ -34,6 +34,8 @@ add_executable(flashgrad_tests
   cuda/test_runtime.cpp
   cuda/test_smoke.cpp
   cuda/test_tensor_cuda.cpp
+  data/test_dataloader.cpp
+  data/test_dataset.cpp
   nn/test_activation.cpp
   nn/test_dropout.cpp
   nn/test_functional.cpp

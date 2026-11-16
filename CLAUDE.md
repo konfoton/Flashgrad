@@ -32,6 +32,9 @@ FLASHGRAD_NO_CACHING=1 compute-sanitizer --tool memcheck ./build-debug/tests/fla
 
 ctest runs the suite twice: as is, and with `FLASHGRAD_NO_CACHING=1` (prefix `no_caching.`).
 
+Building also downloads MNIST into `datasets/mnist` (git-ignored; `cmake/DownloadMnist.cmake`,
+off with `-DFLASHGRAD_DOWNLOAD_MNIST=OFF`). Examples that need it must skip when it's missing.
+
 The build uses `-Werror` for host C++ code — fix warnings, don't suppress them.
 After any change, build **and** run the tests before saying the work is done. For new or changed
 kernels, also run `compute-sanitizer` on the relevant tests.
@@ -39,13 +42,15 @@ kernels, also run `compute-sanitizer` on the relevant tests.
 ## Layout
 
 ```
-include/flashgrad/   public headers (autograd/, core/, cuda/, later nn/, optim/)
+include/flashgrad/   public headers (autograd/, core/, cuda/, data/, later nn/, optim/)
 src/autograd/        graph recording (function.h) and the backward engine
 src/core/            device-independent implementation
 src/cpu/             host-side copy/fill for CPU tensors (no compute ops)
 src/cuda/            CUDA kernels (.cu) and runtime helpers
+src/data/            datasets and the DataLoader (host only: worker threads never call CUDA)
 tests/               GoogleTest, mirrors src/ (tests/core, tests/cuda, ...)
-examples/            small executables; double as integration tests and docs
+examples/            small executables; double as integration tests and docs. Concrete datasets
+                     (MNIST in dataloader_basics.cpp) are defined there, not in the library
 benchmarks/          kernel benchmarks (use cuda::EventTimer, never std::chrono for GPU work)
 ```
 

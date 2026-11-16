@@ -14,6 +14,8 @@
 #include "flashgrad/core/tensor.h"
 #include "flashgrad/cuda/allocator.h"
 #include "flashgrad/cuda/runtime.h"
+#include "flashgrad/data/dataloader.h"
+#include "flashgrad/data/dataset.h"
 #include "flashgrad/nn/activation.h"
 #include "flashgrad/nn/dropout.h"
 #include "flashgrad/nn/functional.h"

@@ -9,3 +9,6 @@ target_link_libraries(ops_basics PRIVATE flashgrad::flashgrad flashgrad_options)
 
 add_executable(autograd_basics autograd_basics.cpp)
 target_link_libraries(autograd_basics PRIVATE flashgrad::flashgrad flashgrad_options)
+
+add_executable(mlp_basics mlp_basics.cpp)
+target_link_libraries(mlp_basics PRIVATE flashgrad::flashgrad flashgrad_options)

@@ -35,8 +35,10 @@ add_executable(flashgrad_tests
   cuda/test_smoke.cpp
   cuda/test_tensor_cuda.cpp
   nn/test_activation.cpp
+  nn/test_dropout.cpp
   nn/test_functional.cpp
   nn/test_linear.cpp
+  nn/test_loss.cpp
   nn/test_module.cpp
   nn/test_sequential.cpp
 )

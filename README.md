@@ -40,6 +40,7 @@ cmake --build build-debug -j
 | `CMAKE_CUDA_ARCHITECTURES` | `86` | Target GPU architecture(s) |
 | `FLASHGRAD_BUILD_TESTS` | `ON` | Build GoogleTest suite |
 | `FLASHGRAD_BUILD_EXAMPLES` | `ON` | Build example programs |
+| `FLASHGRAD_BUILD_BENCHMARKS` | `ON` | Build benchmark programs |
 | `FLASHGRAD_SYNC_KERNELS` | `OFF` | `cudaDeviceSynchronize` after each kernel |
 | `FLASHGRAD_WERROR` | `ON` | Treat host compiler warnings as errors |
 | `FLASHGRAD_DOWNLOAD_MNIST` | `ON` | Download MNIST into `FLASHGRAD_MNIST_DIR` when building (skipped with a warning when offline) |

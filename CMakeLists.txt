@@ -7,11 +7,12 @@ project(flashgrad VERSION 0.1.0 LANGUAGES CXX CUDA)
 # ---------------------------------------------------------------------------
 option(FLASHGRAD_BUILD_TESTS    "Build unit tests"                                ON)
 option(FLASHGRAD_BUILD_EXAMPLES "Build example executables"                       ON)
+option(FLASHGRAD_BUILD_BENCHMARKS "Build benchmark executables"                   ON)
 option(FLASHGRAD_SYNC_KERNELS   "Synchronize after every kernel launch (debug)"   OFF)
 option(FLASHGRAD_WERROR         "Treat host compiler warnings as errors"          ON)
 option(FLASHGRAD_DOWNLOAD_MNIST "Download the MNIST dataset when building"        ON)
 set(FLASHGRAD_MNIST_DIR "${CMAKE_CURRENT_SOURCE_DIR}/datasets/mnist" CACHE PATH
-    "Directory of the unpacked MNIST files (used by the examples)")
+    "Directory of the unpacked MNIST files (used by the examples and benchmarks)")
 
 # ---------------------------------------------------------------------------
 # Language standards
@@ -139,4 +140,8 @@ endif()
 
 if(FLASHGRAD_BUILD_EXAMPLES)
   add_subdirectory(examples)
+endif()
+
+if(FLASHGRAD_BUILD_BENCHMARKS)
+  add_subdirectory(benchmarks)
 endif()

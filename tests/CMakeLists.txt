@@ -34,9 +34,11 @@ add_executable(flashgrad_tests
   cuda/test_runtime.cpp
   cuda/test_smoke.cpp
   cuda/test_tensor_cuda.cpp
+  nn/test_activation.cpp
   nn/test_functional.cpp
   nn/test_linear.cpp
   nn/test_module.cpp
+  nn/test_sequential.cpp
 )
 target_include_directories(flashgrad_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(flashgrad_tests PRIVATE

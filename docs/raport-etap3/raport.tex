@@ -1,0 +1,856 @@
+% Raport z Etapu 3 — Flashgrad (stan gałęzi main, commit 633007b)
+% Kompilacja: pdflatex raport.tex (dwa przebiegi) lub Overleaf (pdfLaTeX).
+\documentclass[11pt,a4paper]{article}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[polish]{babel}
+\usepackage{lmodern}
+\usepackage[margin=2.3cm]{geometry}
+\usepackage{microtype}
+\usepackage{booktabs}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{listings}
+\usepackage{amsmath}
+\usepackage{siunitx}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,babel}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepackage{fancyhdr}
+\usepackage[hidelinks]{hyperref}
+
+\sisetup{output-decimal-marker={,},group-separator={\,}}
+
+\definecolor{fgblue}{HTML}{2A6FDB}
+\definecolor{fggreen}{HTML}{2E9E5B}
+\definecolor{fgorange}{HTML}{E08A1E}
+\definecolor{fgred}{HTML}{C8423B}
+\definecolor{fgpurple}{HTML}{7C4DCC}
+\definecolor{fggray}{HTML}{6B7280}
+\definecolor{codebg}{HTML}{F6F8FA}
+
+\lstdefinestyle{term}{
+  basicstyle=\ttfamily\footnotesize,
+  backgroundcolor=\color{codebg},
+  frame=single, rulecolor=\color{fggray!40},
+  columns=fullflexible, keepspaces=true,
+  breaklines=true, showstringspaces=false,
+  inputencoding=utf8, extendedchars=true,
+  literate={ą}{{\k{a}}}1 {ć}{{\'c}}1 {ę}{{\k{e}}}1 {ł}{{\l{}}}1 {ń}{{\'n}}1
+           {ó}{{\'o}}1 {ś}{{\'s}}1 {ź}{{\'z}}1 {ż}{{\.z}}1
+}
+\lstdefinestyle{cpp}{
+  style=term, language=C++,
+  keywordstyle=\color{fgblue}\bfseries,
+  commentstyle=\color{fggray}\itshape,
+  stringstyle=\color{fggreen}
+}
+
+\setlength{\headheight}{14pt}
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{\small Flashgrad -- Etap 3}
+\rhead{\small Wydział MiNI, PW}
+\cfoot{\thepage}
+
+\tikzset{
+  box/.style={draw, rounded corners=3pt, align=center, font=\small, minimum height=8mm,
+              inner sep=4pt},
+  layer/.style={box, minimum width=14cm, fill=#1!12, draw=#1!70!black},
+  mod/.style={box, fill=#1!15, draw=#1!70!black, minimum width=2.9cm},
+  arr/.style={-{Stealth[length=2.2mm]}, thick},
+  darr/.style={-{Stealth[length=2.2mm]}, thick, dashed},
+}
+
+\title{\textbf{Dokument Etapu 3:\\ Implementacja rdzenia systemu i raport postępu}\\[4pt]
+  \large Projekt inżynierski -- Wydział Matematyki i Nauk Informacyjnych, Politechnika Warszawska\\[2pt]
+  \normalsize \textit{Flashgrad -- biblioteka uczenia głębokiego w C++20 i CUDA}}
+\author{Konrad Burdach \and Wojciech Królikowski \and Antoni Rakowski}
+\date{18 listopada 2026}
+
+\begin{document}
+\maketitle
+\thispagestyle{fancy}
+
+\begin{abstract}
+\noindent
+Dokument podsumowuje stan biblioteki \textbf{Flashgrad} na gałęzi \texttt{main}
+(commit \texttt{633007b}) na koniec Etapu~3. Flashgrad to napisana od podstaw biblioteka
+uczenia głębokiego w~C++20 i~CUDA, wzorowana na PyTorch: tensory jako widoki z~krokami,
+własne jądra GPU, buforujący alokator pamięci, automatyczne różniczkowanie, moduły
+\texttt{nn}, optymalizatory i~wielowątkowy \texttt{DataLoader}. Zrealizowano fazy 0--6
+harmonogramu. Kamieniem milowym jest pełny przepływ end-to-end: uczenie perceptronu
+wielowarstwowego na zbiorze MNIST wyłącznie na własnych jądrach, z~dokładnością testową
+97,5\% (PyTorch z~tą samą konfiguracją: 97,7\%). Wszystkie 974 uruchomienia testów
+(487 testów w~dwóch konfiguracjach alokatora) przechodzą, pokrycie kodu hosta wynosi
+96,0\%, a~\texttt{compute-sanitizer} nie zgłasza błędów pamięci, wyścigów ani błędów
+synchronizacji.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+%=====================================================================
+\section{Postęp implementacji i stan repozytorium}
+%=====================================================================
+
+\begin{table}[H]
+\centering
+\caption{Stan repozytorium (gałąź \texttt{main}, 18.11.2026).}
+\label{tab:repo}
+\begin{tabularx}{\textwidth}{@{}lX@{}}
+\toprule
+\textbf{Wskaźnik} & \textbf{Wartość} \\
+\midrule
+Gałąź \texttt{main} & Commit \texttt{633007b} (PR \#17, 16.11.2026). Stabilna: pełny zestaw testów
+  przechodzi w~kompilacji Release i~Debug, z~alokatorem buforującym i~bez niego \\
+Liczba commitów & 92 (75 merytorycznych + 17 scalających) \\
+Scalone Pull Requesty & 15 (\#1--\#4, \#6, \#8--\#17) \\
+Udział w~commitach & K.~Burdach 64, W.~Królikowski 20, A.~Rakowski 8 \\
+Rozmiar kodu & 5032 linie biblioteki (nagłówki + \texttt{src/}), 5634 linie testów,
+  382 linie przykładów, 287 linii benchmarków; 133 pliki \\
+Testy jednostkowe & 487 testów w~64 zestawach (GoogleTest), w~CTest 974 uruchomienia \\
+Pokrycie kodu (host) & 96,0\% linii w~\texttt{src/} (gcov) \\
+Środowisko & RTX 3090 (\texttt{sm\_86}, 24~GiB), CUDA 13.0, GCC 13.3, CMake 3.28, Ubuntu 24.04 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Projekt nie ma jeszcze zdalnego CI -- darmowe maszyny GitHub Actions nie mają GPU. Testy
+uruchamiane są lokalnie na docelowej karcie przed scaleniem każdego Pull Requesta.
+Kompilacja kodu hosta używa \texttt{-Werror}, więc każde ostrzeżenie blokuje budowanie.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  ybar, width=15cm, height=5.2cm, bar width=11pt,
+  ymin=0, ymax=48,
+  symbolic x coords={13.10,15.10,16.10,17.10,18.10,19.10,20.10,21.10,24.10,29.10,30.10,
+                     31.10,11.11,13.11,14.11,15.11,16.11},
+  xtick=data, ylabel={liczba commitów},
+  nodes near coords, nodes near coords style={font=\scriptsize},
+  x tick label style={font=\scriptsize, rotate=45, anchor=east},
+  axis lines*=left, ymajorgrids, grid style={gray!20}]
+\addplot[fill=fgblue!70, draw=fgblue!80!black] coordinates {
+  (13.10,4) (15.10,4) (16.10,4) (17.10,4) (18.10,1) (19.10,6) (20.10,41) (21.10,2)
+  (24.10,1) (29.10,3) (30.10,1) (31.10,2) (11.11,1) (13.11,4) (14.11,3) (15.11,1)
+  (16.11,10)};
+\end{axis}
+\end{tikzpicture}
+\caption{Liczba commitów w~poszczególnych dniach (łącznie 92, z~commitami scalającymi).
+  Skok 20.10 to autograd: każda różniczkowalna operacja ma osobny commit z~testem gradientu.}
+\label{fig:commits}
+\end{figure}
+
+%=====================================================================
+\section{Zrealizowane komponenty rdzenia}
+%=====================================================================
+
+\subsection{Architektura biblioteki}
+
+Biblioteka ma budowę warstwową (rys.~\ref{fig:arch}). Użytkownik korzysta wyłącznie
+z~API w~C++. Operacje matematyczne wykonują \emph{tylko} jądra CUDA -- tensory w~pamięci
+CPU służą do tworzenia danych, wypisywania i~kopiowania. Pamięć GPU pochodzi z~własnego
+alokatora buforującego, nigdy bezpośrednio z~\texttt{cudaMalloc}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=3mm]
+\node[layer=fgpurple, minimum height=15mm] (hi) {};
+\node[anchor=north west, font=\small\bfseries] at ($(hi.north west)+(1mm,-1mm)$)
+  {Warstwa wysoka (Fazy 5--6)};
+\node[mod=fgpurple, anchor=south west] at ($(hi.south west)+(2mm,1.5mm)$) (nn)
+  {\texttt{nn}: \texttt{Linear}, \texttt{Sequential},\\aktywacje, \texttt{Dropout}, straty};
+\node[mod=fgpurple, right=3mm of nn, minimum width=3.6cm] (opt)
+  {\texttt{optim}: \texttt{SGD},\\\texttt{Adam}/\texttt{AdamW}};
+\node[mod=fgpurple, right=3mm of opt, minimum width=3.6cm] (data)
+  {\texttt{data}: \texttt{Dataset},\\\texttt{DataLoader} (wątki)};
+\node[layer=fggreen, below=of hi] (ag) {\textbf{Autograd} (\texttt{src/autograd})\quad
+  węzły \texttt{Node}/\texttt{Edge}, \texttt{record()}, silnik \texttt{run\_backward}};
+\node[layer=fgorange, below=of ag, minimum height=16mm] (core) {};
+\node[anchor=north west, font=\small\bfseries] at ($(core.north west)+(1mm,-1mm)$)
+  {Rdzeń (\texttt{src/core})};
+\node[mod=fgorange, anchor=south west] at ($(core.south west)+(2mm,1.5mm)$) (shape)
+  {\texttt{Shape}, \texttt{DType},\\ \texttt{Device}};
+\node[mod=fgorange, right=2mm of shape] (stor) {\texttt{Storage}\\(licznik referencji)};
+\node[mod=fgorange, right=2mm of stor] (tens) {\texttt{Tensor}\\(widok z~krokami)};
+\node[mod=fgorange, right=2mm of tens] (ops) {dyspozytor ops\\+ walidacja};
+\node[layer=fgred, below=of core, minimum height=16mm] (cuda) {};
+\node[anchor=north west, font=\small\bfseries] at ($(cuda.north west)+(1mm,-1mm)$)
+  {Backend CUDA (\texttt{src/cuda})};
+\node[mod=fgred, anchor=south west] at ($(cuda.south west)+(2mm,1.5mm)$) (ew)
+  {elementwise\\+ broadcast};
+\node[mod=fgred, right=2mm of ew] (red) {redukcje,\\\texttt{log\_softmax}};
+\node[mod=fgred, right=2mm of red] (mm) {\texttt{matmul}\\(register tiling)};
+\node[mod=fgred, right=2mm of mm] (alloc) {alokator\\buforujący};
+\node[layer=fggray, below=of cuda] (hw) {\textbf{CUDA Runtime 13.0} \quad
+  $\rightarrow$ \quad GPU RTX 3090 (\texttt{sm\_86})};
+\draw[arr] (hi) -- (ag);
+\draw[arr] (ag) -- (core);
+\draw[arr] (core) -- (cuda);
+\draw[arr] (cuda) -- (hw);
+\end{tikzpicture}
+\caption{Warstwowa architektura biblioteki Flashgrad.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Rdzeń tensorów (Faza 1)}
+
+\texttt{Storage} to bufor pamięci ze zliczaniem referencji. \texttt{Tensor} to widok na
+niego opisany trójką (\emph{kształt}, \emph{kroki}, \emph{przesunięcie}). Operacje
+\texttt{t()}, \texttt{permute}, \texttt{slice}, \texttt{select}, \texttt{expand},
+\texttt{view}, \texttt{squeeze}/\texttt{unsqueeze} tworzą nowy widok bez kopiowania
+danych (rys.~\ref{fig:strides}); \texttt{reshape} kopiuje tylko wtedy, gdy nowego kształtu
+nie da się wyrazić krokami. Dostępne są fabryki (\texttt{zeros}, \texttt{ones},
+\texttt{arange}, \texttt{randn}), deterministyczny generator (\texttt{manual\_seed})
+oraz kopie host $\leftrightarrow$ urządzenie.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[cell/.style={draw, minimum size=8mm, font=\small}]
+\node[font=\small\bfseries, anchor=east] at (-0.5,0) {Storage:};
+\foreach \i in {0,...,5} {
+  \node[cell, fill=fgorange!15] at (\i*0.8,0) {\i};
+}
+\node[font=\small, anchor=west] at (5.4,1.6) {\texttt{a}: kształt $[2,3]$, kroki $(3,1)$};
+\foreach \r in {0,1} \foreach \c in {0,1,2} {
+  \pgfmathtruncatemacro{\v}{3*\r+\c}
+  \node[cell, fill=fgblue!12] at (5.8+\c*0.8, 0.6-\r*0.8) {\v};
+}
+\node[font=\small, anchor=west] at (9.4,1.6) {\texttt{a.t()}: kształt $[3,2]$, kroki $(1,3)$};
+\foreach \r in {0,1,2} \foreach \c in {0,1} {
+  \pgfmathtruncatemacro{\v}{\r+3*\c}
+  \node[cell, fill=fggreen!14] at (9.8+\c*0.8, 0.6-\r*0.8) {\v};
+}
+\end{tikzpicture}
+\caption{Element $(i,j)$ widoku leży pod adresem
+  $\textit{offset} + i\cdot\textit{stride}_0 + j\cdot\textit{stride}_1$, więc transpozycja
+  zamienia tylko kroki, bez kopiowania danych.}
+\label{fig:strides}
+\end{figure}
+
+\subsection{Jądra CUDA (Faza 2)}
+
+Wszystkie operacje matematyczne mają własne jądra (tab.~\ref{tab:kernels}). Jądra używają
+pętli \emph{grid-stride} lub jawnych sprawdzeń granic, 64-bitowych indeksów i~wskaźników
+\texttt{\_\_restrict\_\_}; wejścia nieciągłe obsługiwane są przez kroki.
+
+\begin{table}[H]
+\centering
+\caption{Zaimplementowane operacje i~jądra CUDA.}
+\label{tab:kernels}
+\begin{tabularx}{\textwidth}{@{}lXl@{}}
+\toprule
+\textbf{Grupa} & \textbf{Operacje} & \textbf{Plik} \\
+\midrule
+Jednoargumentowe & \texttt{neg}, \texttt{relu}, \texttt{exp}, \texttt{log}, \texttt{sigmoid}
+  (stabilna numerycznie), \texttt{reciprocal} & \texttt{elementwise.cu} \\
+Dwuargumentowe & \texttt{add}, \texttt{sub}, \texttt{mul}, \texttt{div}, \texttt{maximum},
+  \texttt{lt}, \texttt{eq}; broadcasting, operatory ze skalarami & \texttt{elementwise.cu} \\
+W miejscu & \texttt{add\_}, \texttt{sub\_}, \texttt{mul\_}, \texttt{div\_}, \texttt{fill\_},
+  kopia z~krokami & \texttt{elementwise.cu} \\
+Redukcje & \texttt{sum}, \texttt{prod}, \texttt{max}, \texttt{mean} po wymiarze
+  i~po wszystkich elementach; \texttt{unbroadcast} & \texttt{reduce.cu} \\
+Softmax & \texttt{log\_softmax} (blok na wiersz, redukcja max i~sumy) & \texttt{softmax.cu} \\
+Mnożenie macierzy & \texttt{matmul}: kafelek bloku $64\times64$, krok $K$ równy 8,
+  kafelek rejestrowy $8\times8$ na wątek, transpozycja $A$ w~pamięci współdzielonej,
+  odczyty \texttt{float4} & \texttt{matmul.cu} \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Jądro \texttt{matmul} przepisano w~PR \#12 z~prostego kafelkowania $16\times16$ (jeden
+element wyniku na wątek) na wersję z~kafelkowaniem rejestrowym (rys.~\ref{fig:mmtile}).
+Każdy z~256 wątków bloku liczy 64 elementy wyniku, co zwiększa liczbę operacji na jeden
+odczyt z~pamięci współdzielonej. Jądro wymaga wierszy wyrównanych do 16 bajtów, więc
+macierze o~innym układzie są najpierw kopiowane do bufora z~dopełnieniem.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=0.75cm, y=0.75cm]
+% A tile
+\draw[fill=fgblue!12] (0,0) rectangle (1,4);
+\node[font=\small] at (0.5,4.4) {$A$: $64\times8$};
+\draw[fill=fgblue!45] (0,2.5) rectangle (1,3);
+% B tile
+\draw[fill=fggreen!12] (2,5) rectangle (6,6);
+\node[font=\small, anchor=west] at (6.2,5.5) {$B$: $8\times64$};
+\draw[fill=fggreen!45] (3.5,5) rectangle (4,6);
+% C tile
+\draw[fill=fgorange!10] (2,0) rectangle (6,4);
+\foreach \i in {1,...,7} {
+  \draw[gray!40] (2+\i*0.5,0) -- (2+\i*0.5,4);
+  \draw[gray!40] (2,\i*0.5) -- (6,\i*0.5);
+}
+\draw[fill=fgorange!60] (3.5,2.5) rectangle (4,3);
+\node[font=\small, anchor=west] at (6.2,2) {$C$: kafelek bloku $64\times64$};
+\node[font=\small, anchor=west, align=left] at (6.2,1.0)
+  {pole = kafelek $8\times8$ jednego wątku\\(64 akumulatory w~rejestrach)};
+\draw[darr, fgblue] (1,2.75) -- (3.5,2.75);
+\draw[darr, fggreen] (3.75,5) -- (3.75,3);
+\node[font=\footnotesize, align=center] at (0.5,-0.6) {pamięć\\współdzielona};
+\end{tikzpicture}
+\caption{Podział pracy w~jądrze \texttt{matmul}: blok wczytuje paski $A$ i~$B$ do pamięci
+  współdzielonej, a~każdy wątek liczy kafelek $8\times8$ wyniku.}
+\label{fig:mmtile}
+\end{figure}
+
+\subsection{Alokator buforujący (Faza 3)}
+
+\texttt{cudaFree} synchronizuje całe urządzenie, a~\texttt{cudaMalloc} jest kosztowne.
+Alokator przechowuje zwolnione bloki w~puli posortowanej według rozmiaru
+(\texttt{std::multimap}) i~wybiera najmniejszy pasujący blok (\emph{best fit}); nadmiar
+jest ograniczony do 16~MiB i~do rozmiaru żądania. Przy braku pamięci zwalnia pulę i~ponawia
+próbę. \texttt{FLASHGRAD\_NO\_CACHING=1} wyłącza buforowanie, co jest potrzebne, żeby
+\texttt{compute-sanitizer} wykrywał dostęp poza granice bloku.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[node distance=6mm and 9mm]
+\node[box, fill=fgblue!12] (req) {\texttt{allocate(n)}: zaokrąglij do 512 B};
+\node[diamond, draw, aspect=2.4, fill=fgorange!15, below=of req, font=\small,
+      inner sep=1pt, align=center] (hit) {blok w~puli\\(best fit)?};
+\node[box, fill=fggreen!15, right=16mm of hit] (take) {weź blok z~puli};
+\node[box, below=of hit] (mal) {\texttt{cudaMalloc}};
+\node[diamond, draw, aspect=2.4, fill=fgorange!15, below=of mal, font=\small,
+      inner sep=1pt] (oom) {OOM?};
+\node[box, fill=fgred!12, left=14mm of oom] (empty) {\texttt{empty\_cache()}\\i~ponów};
+\node[box, fill=fggreen!15, below=of oom] (ret) {zwróć wskaźnik, statystyki};
+\node[box, fill=fggray!12, right=16mm of ret] (free) {\texttt{free(p)}: blok wraca do puli};
+\draw[arr] (req) -- (hit);
+\draw[arr] (hit) -- node[above, font=\small]{tak} (take);
+\draw[arr] (hit) -- node[right, font=\small]{nie} (mal);
+\draw[arr] (mal) -- (oom);
+\draw[arr] (oom) -- node[above, font=\small]{tak} (empty);
+\draw[arr] (empty) |- (mal);
+\draw[arr] (oom) -- node[right, font=\small]{nie} (ret);
+\draw[arr] (take) |- (ret);
+\end{tikzpicture}
+\caption{Przydział pamięci w~alokatorze buforującym.}
+\label{fig:alloc}
+\end{figure}
+
+\subsection{Automatyczne różniczkowanie (Faza 4)}
+
+Różniczkowalna operacja liczy wynik, a~następnie -- jeśli któreś wejście wymaga
+gradientu -- rejestruje węzeł grafu z~funkcją wsteczną zbudowaną z~innych operacji:
+
+\begin{lstlisting}[style=cpp]
+Tensor out = binary(BinaryOp::Mul, "mul", a, b);  // jądro CUDA
+if (needs_grad({a, b})) {
+  record(out, "mul", {a, b},
+         [a = a.detach(), b = b.detach(), need_a = a.requires_grad(),
+          need_b = b.requires_grad()](const Tensor& g) {
+           return Grads{need_a ? g * b : Tensor(), need_b ? g * a : Tensor()};
+         });
+}
+return out;
+\end{lstlisting}
+
+Silnik \texttt{run\_backward} zlicza krawędzie wchodzące do każdego węzła osiągalnego
+z~korzenia i~przetwarza węzły w~porządku topologicznym -- węzeł uruchamia się po zebraniu
+gradientów od wszystkich konsumentów. Gradienty po broadcastingu są sumowane do kształtu
+wejścia (\texttt{unbroadcast}). Funkcje wsteczne działają bez rejestrowania grafu
+(\texttt{NoGradGuard}), a~operacje w~miejscu na tensorach wymagających gradientu zgłaszają
+błąd.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  leaf/.style={box, fill=fgblue!12, minimum width=1.2cm},
+  op/.style={box, fill=fgorange!15, rounded corners=6pt, minimum width=1.9cm},
+  node distance=5mm and 6mm]
+\node[leaf] (x) {\texttt{x}};
+\node[leaf, right=of x] (w1) {\texttt{W1}};
+\node[leaf, right=10mm of w1] (b1) {\texttt{b1}};
+\coordinate (xw) at ($(x)!0.5!(w1)$);
+\node[op, below=of xw] (mm1) {\texttt{matmul}};
+\node[op, below=of mm1] (add1) {\texttt{add}};
+\node[op, below=of add1] (relu) {\texttt{relu}};
+\node[leaf, right=10mm of relu] (w2) {\texttt{W2}, \texttt{b2}};
+\node[op, below=of relu] (mm2) {\texttt{matmul}, \texttt{add}};
+\node[op, below=of mm2] (ls) {\texttt{log\_softmax}};
+\node[op, below=of ls] (loss) {\texttt{cross\_entropy}};
+\node[box, fill=fgred!15, below=of loss] (L) {\texttt{loss}};
+\draw[arr] (x) -- (mm1); \draw[arr] (w1) -- (mm1);
+\draw[arr] (mm1) -- (add1); \draw[arr] (b1) |- (add1);
+\draw[arr] (add1) -- (relu); \draw[arr] (relu) -- (mm2); \draw[arr] (w2) |- (mm2);
+\draw[arr] (mm2) -- (ls); \draw[arr] (ls) -- (loss); \draw[arr] (loss) -- (L);
+\coordinate (bk) at ($(L.west)+(-1.6,0)$);
+\draw[arr, fgred, dashed] (bk) -- (bk |- mm1)
+  node[midway, left, align=center, font=\small, text=fgred]
+  {\texttt{backward()}\\porządek\\topologiczny};
+\node[leaf, minimum height=5mm, minimum width=7mm, right=30mm of ls] (lg1) {};
+\node[right=2mm of lg1, font=\small] {liście (parametry)};
+\node[op, minimum height=5mm, minimum width=7mm, below=3mm of lg1] (lg2) {};
+\node[right=2mm of lg2, font=\small] {węzły z~funkcją wsteczną};
+\end{tikzpicture}
+\caption{Graf obliczeń rejestrowany przy kroku w~przód sieci dwuwarstwowej.}
+\label{fig:graph}
+\end{figure}
+
+\subsection{Moduły \texttt{nn}, optymalizatory i dane (Fazy 5--6)}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{\texttt{nn}} -- klasa bazowa \texttt{Module} (nazwane parametry i~podmoduły,
+  tryby \texttt{train()}/\texttt{eval()}), \texttt{Linear} (inicjalizacja jak w~PyTorch),
+  \texttt{Sequential}, \texttt{MLP}, aktywacje (\texttt{ReLU}, \texttt{Sigmoid},
+  \texttt{Tanh}, \texttt{GELU}, \texttt{SiLU}, \texttt{LeakyReLU}, \texttt{Softmax}),
+  \texttt{Dropout} oraz straty \texttt{mse\_loss} i~\texttt{cross\_entropy}.
+\item \textbf{\texttt{optim}} -- klasa bazowa \texttt{Optimizer}, \texttt{SGD} (momentum,
+  \emph{weight decay}) i~\texttt{Adam}/\texttt{AdamW} z~korekcją obciążenia
+  momentów, zgodne z~definicjami PyTorch.
+\item \textbf{\texttt{data}} -- \texttt{Dataset}, \texttt{TensorDataset} i~\texttt{DataLoader}
+  z~mieszaniem, \texttt{drop\_last} i~wątkami roboczymi (\texttt{std::jthread}). Wątki
+  budują paczki wyłącznie w~pamięci hosta; kopia na GPU odbywa się w~wątku, który
+  przesuwa iterator, więc cała praca CUDA zostaje w~jednym wątku i~jednym strumieniu.
+  Kolejność i~zawartość paczek nie zależy od liczby wątków.
+\end{itemize}
+
+%=====================================================================
+\section{Pierwszy działający przepływ end-to-end}
+%=====================================================================
+
+Kamieniem milowym Fazy~6 jest program \texttt{benchmarks/mnist\_mlp.cpp}, który uczy sieć
+$784 \to 256 \to 128 \to 10$ (ReLU, \texttt{Dropout} 0,1) na zbiorze MNIST optymalizatorem
+Adam (lr $=10^{-3}$, paczki po 128 przykładów, 5 epok, 4 wątki \texttt{DataLoader}).
+Zbiór pobiera CMake podczas budowania. Program kończy się błędem, gdy dokładność testowa
+spadnie poniżej 97\%. Przepływ jednego kroku pokazuje rys.~\ref{fig:seq}:
+
+\begin{enumerate}[leftmargin=*]
+\item Wątki \texttt{DataLoader} składają paczkę $[128, 1, 28, 28]$ w~pamięci hosta.
+\item Główny wątek kopiuje paczkę na GPU (alokacja z~puli alokatora).
+\item Krok w~przód przez \texttt{Sequential} i~\texttt{cross\_entropy}; każda operacja
+  rejestruje węzeł grafu.
+\item \texttt{optimizer.zero\_grad()}, \texttt{loss.backward()} -- silnik autogradu
+  liczy gradienty wszystkich 6 tensorów parametrów.
+\item \texttt{optimizer.step()} aktualizuje parametry w~trybie bez gradientu.
+\item Co 100 kroków \texttt{loss.item()} kopiuje stratę na hosta -- to jedyny punkt
+  synchronizacji z~GPU w~pętli uczenia.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[
+  lane/.style={draw, fill=#1!15, minimum width=2.4cm, minimum height=8mm,
+               font=\small\bfseries, rounded corners=2pt, align=center},
+  msg/.style={-{Stealth[length=2mm]}, thick},
+  lbl/.style={font=\footnotesize, fill=white, inner sep=1pt}]
+\node[lane=fgpurple] (w) at (0,0) {Wątki\\\texttt{DataLoader}};
+\node[lane=fgblue] (h) at (3.6,0) {Pętla uczenia};
+\node[lane=fggreen] (a) at (7.2,0) {Autograd /\\\texttt{optim}};
+\node[lane=fgorange] (c) at (10.8,0) {Jądra CUDA};
+\node[lane=fggray] (m) at (14.0,0) {Alokator};
+\foreach \n in {w,h,a,c,m} \draw[gray, dashed] (\n.south) -- ++(0,-9.4);
+\draw[msg] (0,-1.1) -- node[lbl, above]{paczka (CPU)} (3.6,-1.1);
+\draw[msg] (3.6,-1.8) -- node[lbl, above]{kopia na GPU} (10.8,-1.8);
+\draw[msg] (10.8,-2.3) -- node[lbl, above]{\texttt{allocate}} (14.0,-2.3);
+\draw[msg] (3.6,-3.2) -- node[lbl, above]{\texttt{model(x)}, \texttt{cross\_entropy}} (10.8,-3.2);
+\draw[msg] (10.8,-3.7) -- node[lbl, above]{\texttt{record()}} (7.2,-3.7);
+\draw[msg] (3.6,-4.6) -- node[lbl, above]{\texttt{backward()}} (7.2,-4.6);
+\draw[msg] (7.2,-5.2) -- node[lbl, above]{funkcje wsteczne} (10.8,-5.2);
+\draw[msg] (3.6,-6.2) -- node[lbl, above]{\texttt{step()}} (7.2,-6.2);
+\draw[msg] (7.2,-6.8) -- node[lbl, above]{aktualizacja Adam} (10.8,-6.8);
+\draw[msg] (10.8,-7.3) -- node[lbl, above]{\texttt{free} $\to$ pula} (14.0,-7.3);
+\draw[msg] (3.6,-8.3) -- node[lbl, above]{\texttt{loss.item()} co 100 kroków} (10.8,-8.3);
+\draw[msg, dashed] (10.8,-8.9) -- node[lbl, above]{\texttt{float}} (3.6,-8.9);
+\draw[thick, fgred, |-|] (1.6,-1.6) -- (1.6,-7.5)
+  node[midway, fill=white, font=\footnotesize, text=fgred, align=center]{2345\\kroków};
+\end{tikzpicture}
+\caption{Diagram sekwencji kroku uczenia w~\texttt{mnist\_mlp}. Wątki robocze
+  przygotowują kolejne paczki równolegle z~obliczeniami na GPU.}
+\label{fig:seq}
+\end{figure}
+
+\begin{lstlisting}[style=term, caption={Wyjście \texttt{./build/benchmarks/mnist\_mlp} (skrócone).}]
+training on 60000 images, 469 batches per epoch
+epoch 1, step 100: loss 0.284477
+...
+epoch 1: test accuracy 0.9512
+epoch 2: test accuracy 0.9666
+epoch 3: test accuracy 0.9706
+epoch 4: test accuracy 0.973
+epoch 5: test accuracy 0.975
+\end{lstlisting}
+
+Dla porównania uruchomiono \texttt{benchmarks/mnist\_mlp\_torch.py} -- ten sam model,
+dane, inicjalizację i~hiperparametry w~PyTorch 2.8 (rys.~\ref{fig:mnist},
+tab.~\ref{tab:mnist}). Strumienie losowe są różne, więc wyniki zgadzają się statystycznie,
+a nie co do bitu.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=8.2cm, height=5.6cm, xlabel={krok}, ylabel={strata (paczka)},
+  xmin=0, xmax=2400, ymin=0, ymax=0.4, ymajorgrids, grid style={gray!20},
+  axis lines*=left, tick label style={font=\footnotesize}, label style={font=\small},
+  legend style={font=\footnotesize}, scaled x ticks=false]
+\addplot[thick, fgblue, mark=*, mark size=1.2pt] coordinates {
+  (100,0.284477) (200,0.344621) (300,0.229386) (400,0.255039) (500,0.17259) (600,0.072674)
+  (700,0.138662) (800,0.102527) (900,0.0736849) (1000,0.116442) (1100,0.0938158)
+  (1200,0.162074) (1300,0.109056) (1400,0.0528421) (1500,0.0875813) (1600,0.126071)
+  (1700,0.0479068) (1800,0.0364544) (1900,0.0944247) (2000,0.0495429) (2100,0.0337923)
+  (2200,0.0386056) (2300,0.0455526)};
+\addplot[thick, fggray, dashed, mark=square*, mark size=1.2pt] coordinates {
+  (100,0.282795) (200,0.298579) (300,0.172548) (400,0.200614) (500,0.156198)
+  (600,0.101636) (700,0.0755943) (800,0.151344) (900,0.0632943) (1000,0.0534815)
+  (1100,0.0957797) (1200,0.0569592) (1300,0.0716302) (1400,0.0505606) (1500,0.0363149)
+  (1600,0.0780344) (1700,0.060559) (1800,0.0583095) (1900,0.0325318) (2000,0.0962047)
+  (2100,0.0260842) (2200,0.0190387) (2300,0.0733986)};
+\legend{Flashgrad, PyTorch}
+\end{axis}
+\end{tikzpicture}\hfill
+\begin{tikzpicture}
+\begin{axis}[
+  width=7.4cm, height=5.6cm, xlabel={epoka}, ylabel={dokładność testowa [\%]},
+  xmin=0.8, xmax=5.2, ymin=94.5, ymax=98, xtick={1,...,5}, ymajorgrids,
+  grid style={gray!20}, axis lines*=left, tick label style={font=\footnotesize},
+  label style={font=\small}, legend style={font=\footnotesize, at={(0.97,0.03)},
+  anchor=south east}]
+\addplot[thick, fgblue, mark=*] coordinates
+  {(1,95.12) (2,96.66) (3,97.06) (4,97.30) (5,97.50)};
+\addplot[thick, fggray, dashed, mark=square*] coordinates
+  {(1,95.25) (2,96.78) (3,97.27) (4,97.69) (5,97.66)};
+\addplot[fgred, densely dotted, thick, domain=0.8:5.2] {97};
+\legend{Flashgrad, PyTorch, próg 97\%}
+\end{axis}
+\end{tikzpicture}
+\caption{Uczenie MLP na MNIST: strata co 100 kroków (lewy) i~dokładność testowa po
+  każdej epoce (prawy).}
+\label{fig:mnist}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{MNIST MLP: Flashgrad i~PyTorch z~tą samą konfiguracją.}
+\label{tab:mnist}
+\begin{tabular}{@{}lrr@{}}
+\toprule
+ & \textbf{Flashgrad} & \textbf{PyTorch 2.8} \\
+\midrule
+Dokładność testowa po 5 epokach & 97,50\% & 97,66\% \\
+Czas całego programu (wczytanie danych + uczenie + ewaluacja) & \SI{4.2}{s} & \SI{21.0}{s} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Różnica czasu wynika głównie z~narzutu Pythona: sam start PyTorch z~inicjalizacją CUDA
+trwa ok.\ \SI{1.5}{s}, a~\texttt{DataLoader} PyTorch składa paczki w~Pythonie, przykład po
+przykładzie. To porównanie całego programu, a~nie samych jąder -- szczegółowe
+profilowanie (Nsight Systems) jest zaplanowane w~Fazie~9.
+
+%=====================================================================
+\section{Raport z testów}
+%=====================================================================
+
+\subsection{Metodyka}
+
+\begin{itemize}[leftmargin=*]
+\item \textbf{Testy z~referencją.} Każda operacja jest porównywana z~naiwną referencją
+  w~kodzie testów (\texttt{tests/reference.h}: pętle po \texttt{std::vector},
+  akumulatory \texttt{double}) na losowych danych, w~tym: puste tensory, rozmiar 1,
+  rozmiary niebędące wielokrotnością bloku (257, 1\,000\,003), wejścia nieciągłe
+  i~broadcasting.
+\item \textbf{Tolerancje.} Porównanie dokładne tylko tam, gdzie jest gwarantowane
+  (pojedyncze operacje fp32, kopie); w~pozostałych przypadkach tolerancja względna
+  i~bezwzględna.
+\item \textbf{Sprawdzanie gradientów.} Gradienty z~\texttt{backward()} (fp32, GPU)
+  porównywane są z~różnicami centralnymi referencji liczonymi w~\texttt{double}
+  (\texttt{tests/gradcheck.h}).
+\item \textbf{Dwie konfiguracje alokatora.} CTest uruchamia zestaw z~buforowaniem
+  i~z~\texttt{FLASHGRAD\_NO\_CACHING=1}.
+\item \textbf{Sanitizery.} Kompilacja Debug z~synchronizacją po każdym jądrze uruchamiana
+  pod \texttt{compute-sanitizer}.
+\end{itemize}
+
+\subsection{Wyniki testów jednostkowych}
+
+\begin{lstlisting}[style=term, caption={Wynik \texttt{ctest --test-dir build} (Release, \texttt{main}, 18.11.2026).}]
+974/974 Test #974: no_caching.Workers/DataLoaderWorkers.RejectsCudaExamples/8 ... Passed 0.36 sec
+
+100% tests passed, 0 tests failed out of 974
+
+Total Test time (real) = 132.29 sec
+
+The following tests did not run:
+    617 - no_caching.CachingAllocator.ReusesAFreedBlock (Skipped)
+    618 - no_caching.CachingAllocator.ReusesTheMostRecentlyFreedBlockOfASize (Skipped)
+    619 - no_caching.CachingAllocator.PicksTheSmallestBlockThatFits (Skipped)
+    620 - no_caching.CachingAllocator.SmallRequestDoesNotTakeALargeBlock (Skipped)
+    624 - no_caching.CachingAllocator.RetriesAfterEmptyingTheCacheWhenOutOfMemory (Skipped)
+
+$ ./build/tests/flashgrad_tests --gtest_brief=1
+[==========] 487 tests from 64 test suites ran. (16910 ms total)
+[  PASSED  ] 487 tests.
+\end{lstlisting}
+
+Pięć pominiętych testów sprawdza ponowne użycie bloków z~puli, więc bez buforowania
+celowo wywołują \texttt{GTEST\_SKIP()}.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  xbar, width=12cm, height=10.5cm, bar width=6pt, bar shift=0pt,
+  xmin=0, xmax=100, xlabel={liczba testów},
+  symbolic y coords={
+    adam,sgd,
+    dataset,dataloader,
+    activation,dropout,loss,linear,module,sequential,functional,
+    gradcheck,grad\_mode,in\_place,grad\_softmax,grad\_matmul,grad\_views,grad\_reduce,
+    engine,tensor\_autograd,grad\_elementwise,
+    error,dtype\_device,shape,views,tensor,
+    runtime,ops\_matmul,smoke,ops\_fill,ops\_softmax,caching\_allocator,tensor\_cuda,
+    ops\_reduce,ops\_elementwise},
+  ytick=data, y tick label style={font=\scriptsize\ttfamily},
+  nodes near coords, nodes near coords style={font=\scriptsize},
+  axis lines*=left, xmajorgrids, grid style={gray!20},
+  legend style={at={(0.97,0.03)}, anchor=south east, font=\footnotesize}]
+\addplot[fill=fgblue!60, draw=fgblue!80!black] coordinates {
+  (4,runtime) (7,ops\_matmul) (8,smoke) (9,ops\_fill) (9,ops\_softmax)
+  (10,caching\_allocator) (21,tensor\_cuda) (29,ops\_reduce) (34,ops\_elementwise)};
+\addplot[fill=fgorange!60, draw=fgorange!80!black] coordinates {
+  (5,error) (6,dtype\_device) (7,shape) (17,views) (28,tensor)};
+\addplot[fill=fggreen!60, draw=fggreen!80!black] coordinates {
+  (3,gradcheck) (4,grad\_mode) (4,in\_place) (4,grad\_softmax) (5,grad\_matmul)
+  (9,grad\_views) (10,grad\_reduce) (11,engine) (11,tensor\_autograd) (36,grad\_elementwise)};
+\addplot[fill=fgpurple!60, draw=fgpurple!80!black] coordinates {
+  (9,activation) (7,dropout) (9,loss) (11,linear) (12,module) (13,sequential)
+  (17,functional)};
+\addplot[fill=fgred!50, draw=fgred!80!black] coordinates {(8,dataset) (92,dataloader)};
+\addplot[fill=fggray!50, draw=fggray] coordinates {(8,adam) (10,sgd)};
+\legend{\texttt{cuda} (131), \texttt{core} (63), \texttt{autograd} (97), \texttt{nn} (78),
+  \texttt{data} (100), \texttt{optim} (18)}
+\end{axis}
+\end{tikzpicture}
+\caption{Liczba testów w~plikach \texttt{tests/<moduł>/test\_<nazwa>.cpp} (łącznie 487).
+  Testy \texttt{DataLoader} są sparametryzowane liczbą wątków (0, 1, 2, 4, 8).}
+\label{fig:tests}
+\end{figure}
+
+\subsection{Pokrycie kodu}
+
+Pokrycie zmierzono osobną kompilacją Debug z~\texttt{--coverage} (dla plików \texttt{.cu}
+przez \texttt{-Xcompiler --coverage}) i~narzędziem \texttt{gcov}. \texttt{gcov} nie mierzy
+kodu wykonywanego na GPU -- poprawność jąder weryfikują testy z~referencją
+i~\texttt{compute-sanitizer}.
+
+\begin{table}[H]
+\centering
+\caption{Pokrycie linii kodu hosta (gcov, \texttt{main}).}
+\label{tab:cov}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Moduł} & \textbf{Pokryte linie} & \textbf{Linie wykonywalne} & \textbf{Pokrycie} \\
+\midrule
+\texttt{src/autograd} & 125 & 125 & 100,0\% \\
+\texttt{src/core}     & 763 & 778 & 98,1\% \\
+\texttt{src/cpu}      & 33  & 33  & 100,0\% \\
+\texttt{src/cuda} (część hosta) & 353 & 400 & 88,2\% \\
+\texttt{src/data}     & 149 & 151 & 98,7\% \\
+\texttt{src/nn}       & 140 & 144 & 97,2\% \\
+\texttt{src/optim}    & 60  & 60  & 100,0\% \\
+\midrule
+\textbf{Razem \texttt{src/}} & \textbf{1623} & \textbf{1691} & \textbf{96,0\%} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Niepokryte linie w~\texttt{src/cuda} to głównie obsługa błędów niemożliwych do wywołania
+w~teście (np.\ przekroczenie limitu siatki, wymagające tensora większego niż pamięć GPU)
+i~ścieżki dla wielu urządzeń.
+
+\subsection{Weryfikacja pamięci i synchronizacji}
+
+\begin{table}[H]
+\centering
+\caption{Wyniki \texttt{compute-sanitizer} (Debug, \texttt{FLASHGRAD\_NO\_CACHING=1}).}
+\label{tab:san}
+\begin{tabularx}{\textwidth}{@{}llX@{}}
+\toprule
+\textbf{Narzędzie} & \textbf{Wynik} & \textbf{Zakres i~uwagi} \\
+\midrule
+\texttt{memcheck}  & 0 błędów dostępu & Cały zestaw (482 zaliczone, 5 pominiętych). Zgłoszone
+  4 błędy API to celowe \texttt{cudaErrorMemoryAllocation} z~testów
+  \texttt{OutOfMemory\ldots}, sprawdzających, że OOM zgłasza wyjątek i~zostawia CUDA
+  w~stanie używalnym. \\
+\texttt{racecheck} & 0 zagrożeń & 31 testów jąder z~pamięcią współdzieloną
+  (\texttt{matmul}, redukcje, \texttt{log\_softmax}). \\
+\texttt{synccheck} & 0 błędów & Te same 31 testów: poprawne użycie \texttt{\_\_syncthreads()}. \\
+\texttt{initcheck} & 0 błędów & Te same 31 testów: brak odczytów niezainicjalizowanej pamięci. \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+%=====================================================================
+\section{Wydajność jąder}
+%=====================================================================
+
+Pomiary wykonano na RTX 3090 w~kompilacji Release. Czas mierzono zdarzeniami CUDA
+(\texttt{cuda::EventTimer}), uśredniając 10--50 powtórzeń po rozgrzewce. cuBLAS
+(\texttt{cublasSgemm}) jest wyłącznie punktem odniesienia. Wartości dla poprzedniego jądra
+\texttt{matmul} zmierzono tym samym programem na commicie \texttt{56d0d79}, przed PR \#12.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=13cm, height=6.4cm, xmode=log, log basis x=2,
+  xtick={128,256,512,1024,2048,4096}, xticklabels={128,256,512,1024,2048,4096},
+  xlabel={$n$ (macierze $n\times n$)}, ylabel={GFLOP/s},
+  ymin=0, ymax=23000, ymajorgrids, grid style={gray!20}, axis lines*=left,
+  legend pos=north west, legend style={font=\footnotesize},
+  tick label style={font=\footnotesize},
+  scaled y ticks=false, yticklabel style={/pgf/number format/1000 sep={\,}}]
+\addplot[thick, fgblue, mark=*] coordinates
+  {(128,282.1) (256,1214.5) (512,5025.8) (1024,10453.4) (2048,14506.9) (4096,15716.4)};
+\addplot[thick, fgorange, mark=triangle*] coordinates
+  {(128,723.7) (256,1713.8) (512,2264.0) (1024,2344.2) (2048,2398.2) (4096,2488.1)};
+\addplot[thick, fggray, dashed, mark=square*] coordinates
+  {(128,706.2) (256,4025.6) (512,10922.7) (1024,18648.0) (2048,22788.9) (4096,21508.9)};
+\legend{Flashgrad \texttt{matmul} (register tiling; \texttt{main}),
+  poprzednie jądro (tiling $16\times16$),
+  cuBLAS \texttt{sgemm}}
+\end{axis}
+\end{tikzpicture}
+\caption{Przepustowość mnożenia macierzy fp32.}
+\label{fig:matmul}
+\end{figure}
+
+Nowe jądro osiąga 15,7~TFLOP/s dla $n=4096$, czyli 73\% wydajności cuBLAS i~6,3 razy
+więcej niż poprzednie. Dla małych macierzy ($n \le 256$) jest jednak wolniejsze od
+poprzedniego, bo przygotowanie buforów z~dopełnieniem i~dodatkowe kopie kosztują więcej
+niż samo mnożenie. Ma to znaczenie dla małych sieci (tab.~\ref{tab:cache}) i~jest
+zapisane jako zadanie do poprawy.
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}
+\begin{axis}[
+  width=13cm, height=6cm, xmode=log, log basis x=2,
+  xtick={65536,1048576,4194304,16777216,67108864},
+  xticklabels={$2^{16}$,$2^{20}$,$2^{22}$,$2^{24}$,$2^{26}$},
+  xlabel={liczba elementów}, ylabel={przepustowość [GB/s]},
+  ymin=0, ymax=1000, ymajorgrids, grid style={gray!20}, axis lines*=left,
+  legend style={font=\footnotesize, at={(0.98,0.02)}, anchor=south east},
+  tick label style={font=\footnotesize}]
+\addplot[thick, fgblue, mark=*] coordinates
+  {(65536,243.8) (1048576,742.5) (4194304,805.8) (16777216,712.0) (67108864,804.8)};
+\addplot[thick, fgblue, dashed, mark=o] coordinates
+  {(65536,79.6) (1048576,79.3) (4194304,104.6) (16777216,135.7) (67108864,253.5)};
+\addplot[thick, fggreen, mark=square*] coordinates
+  {(65536,49.2) (1048576,572.9) (4194304,670.1) (16777216,799.7) (67108864,738.4)};
+\addplot[thick, fgred, densely dotted, domain=65536:67108864] {936};
+\legend{\texttt{a + b} z~buforowaniem, \texttt{a + b} bez buforowania,
+  \texttt{sum(a)} z~buforowaniem, szczytowa przepustowość (936 GB/s)}
+\end{axis}
+\end{tikzpicture}
+\caption{Przepustowość pamięci jąder elementwise i~redukcji (fp32).}
+\label{fig:bw}
+\end{figure}
+
+Dodawanie osiąga do 806~GB/s (86\% szczytowej przepustowości GDDR6X), a~\texttt{sum} do
+800~GB/s (85\%), więc jądra ograniczone pamięcią są blisko limitu sprzętowego. Bez
+alokatora buforującego przepustowość dodawania spada 3--9-krotnie, bo każdy wynik wymaga
+\texttt{cudaMalloc}, a~każde zwolnienie -- synchronizującego \texttt{cudaFree}.
+
+\begin{table}[H]
+\centering
+\caption{Wpływ alokatora buforującego.}
+\label{tab:cache}
+\begin{tabular}{@{}lrrr@{}}
+\toprule
+\textbf{Pomiar} & \textbf{z buforowaniem} & \textbf{bez buforowania} & \textbf{przyspieszenie} \\
+\midrule
+\texttt{a + b}, $2^{20}$ el.     & \SI{0.017}{ms} & \SI{0.159}{ms} & 9,4$\times$ \\
+\texttt{sum(a)}, $2^{20}$ el.    & \SI{0.007}{ms} & \SI{0.016}{ms} & 2,2$\times$ \\
+\texttt{matmul} $512\times512$   & \SI{0.053}{ms} & \SI{0.094}{ms} & 1,8$\times$ \\
+krok uczenia sieci $2\to32\to2$ (w~przód + wstecz) & \SI{0.179}{ms} & \SI{0.343}{ms} & 1,9$\times$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\texttt{DataLoader} składa cały zbiór treningowy MNIST (60\,000 obrazów) w~\SI{0.274}{s}
+w~jednym wątku i~w~\SI{0.113}{s} z~4 wątkami roboczymi (2,4$\times$ szybciej;
+\texttt{examples/dataloader\_basics}).
+
+%=====================================================================
+\section{Zgodność z harmonogramem i ścieżka krytyczna}
+%=====================================================================
+
+\begin{figure}[H]
+\centering
+\begin{tikzpicture}[x=0.2cm, y=0.6cm]
+% dzień 0 = 13.10.2026; 110 = 31.01.2027
+\foreach \d/\l in {0/13.10, 19/1.11, 49/1.12, 80/1.01, 110/31.01} {
+  \draw[gray!40] (\d,0.5) -- (\d,-11.4);
+  \node[font=\scriptsize, above] at (\d,0.5) {\l};
+}
+\draw[fgred, thick] (36,0.5) -- (36,-11.4) node[below, font=\scriptsize, text=fgred] {dziś (18.11)};
+\newcommand{\fgtask}[5]{% wiersz, początek, koniec, kolor, etykieta
+  \node[font=\scriptsize, anchor=east] at (-1,-#1) {#5};
+  \fill[#4, rounded corners=1pt] (#2,-#1-0.32) rectangle (#3,-#1+0.32);}
+\fgtask{0}{0}{1}{fggreen}{F0 infrastruktura}
+\fgtask{1}{2}{4}{fggreen}{F1 rdzeń tensorów}
+\fgtask{2}{4}{8}{fggreen}{F2 jądra CUDA}
+\fgtask{3}{8}{18}{fggreen}{F2 \texttt{matmul} (PR \#12)}
+\fgtask{4}{6}{8}{fggreen}{F3 alokator}
+\fgtask{5}{7}{17}{fggreen}{F4 autograd}
+\fgtask{6}{29}{34}{fggreen}{F5 moduły \texttt{nn}}
+\fgtask{7}{31}{34}{fggreen}{F6 optim, dane, MNIST}
+\fgtask{8}{37}{56}{fgblue!50}{F7 Conv2d, CIFAR-10}
+\fgtask{9}{56}{96}{fgblue!50}{F8 FlashAttention, GPT}
+\fgtask{10}{90}{110}{fgblue!50}{F9 benchmarki}
+\end{tikzpicture}
+\caption{Harmonogram faz (zielone -- zakończone, według historii git; niebieskie --
+  planowane).}
+\label{fig:gantt}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Stan zadań Etapu 3.}
+\label{tab:schedule}
+\begin{tabularx}{\textwidth}{@{}lcX@{}}
+\toprule
+\textbf{Zadanie} & \textbf{Status} & \textbf{Uwagi i~ewentualne opóźnienia} \\
+\midrule
+F0--F1: infrastruktura, tensory & \textbf{100\%} & PR \#1--\#6, zgodnie z~planem \\
+F2: jądra CUDA & \textbf{100\%} & PR \#8, \#9, \#11, \#12; \texttt{matmul} 73\% cuBLAS \\
+F3: alokator buforujący & \textbf{100\%} & PR \#10; do 9,4$\times$ szybsze małe operacje \\
+F4: autograd & \textbf{100\%} & PR \#13, \#14; gradienty sprawdzone różnicami skończonymi \\
+F5: moduły \texttt{nn} & \textbf{100\%} & PR \#16; \texttt{mlp\_basics}: 97,9\% dokładności \\
+F6: optymalizatory, \texttt{DataLoader}, MNIST & \textbf{100\%} & PR \#15, \#17; MNIST
+  97,5\%. Do zrobienia: odhaczenie fazy w~\texttt{README.md} \\
+Narzut \texttt{matmul} dla małych macierzy & \textbf{otwarte} & Regresja dla
+  $n \le 256$; nie blokuje F7 \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\paragraph{Ścieżka krytyczna.} Fazy 0--6 zakończono przed terminem, co daje zapas na
+najtrudniejszą Fazę~8 (FlashAttention, mieszana precyzja, mały GPT), zależną od jąder
+złożonych i~\texttt{Conv2d} z~Fazy~7. Główne ryzyka to wprowadzenie fp16/bf16 (rozszerzenie
+\texttt{DType} i~wszystkich jąder) oraz narzut małych operacji, który w~modelu GPT
+z~wieloma małymi macierzami może dominować. Projekt jest na to przygotowany: tensory od
+początku przechowują typ danych, a~API jąder przyjmuje strumień CUDA.
+
+\paragraph{Następne kroki (Etap 4).} \texttt{Conv2d} i~pooling z~własnymi jądrami, jądra
+złożone (np.\ \texttt{linear}+aktywacja), uczenie CNN na CIFAR-10, usunięcie narzutu
+\texttt{matmul} dla małych macierzy.
+
+\vfill
+\noindent
+\begin{tabularx}{\textwidth}{@{}Xr@{}}
+\textbf{Podpis promotora (akceptacja Etapu 3):} \dotfill & \textbf{Data:} 22 listopada 2026 \\
+\end{tabularx}
+
+\end{document}

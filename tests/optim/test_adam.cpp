@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <vector>
 
 #include "flashgrad/core/error.h"
@@ -52,23 +53,61 @@ std::vector<std::vector<double>> adam_ref(std::vector<double> p,
   return history;
 }
 
-// Runs Adam on the GPU with the gradients and compares every step with adam_ref.
-void check_against_reference(const optim::AdamOptions& options) {
+// Runs Adam on the GPU with the gradients and compares every step with adam_ref, both with
+// the fused kernel and with the unfused composite ops.
+void check_against_reference(optim::AdamOptions options) {
   const std::vector<float> start = {1.0f, -0.5f, 2.0f};
   const std::vector<std::vector<double>> grads = {
       {0.1, -0.2, 0.3}, {0.5, 0.1, -0.4}, {-0.3, 0.2, 0.0}, {0.05, -0.05, 0.2}};
-  const Tensor p = fg::tensor(start, fg::Device::cuda()).requires_grad_();
-  optim::Adam adam({p}, options);
   const auto expected = adam_ref(std::vector<double>(start.begin(), start.end()), grads, options);
-  for (std::size_t t = 0; t < grads.size(); ++t) {
-    const std::vector<float> g(grads[t].begin(), grads[t].end());
-    p.set_grad(fg::tensor(g, fg::Device::cuda()));
-    adam.step();
-    const std::vector<float> e(expected[t].begin(), expected[t].end());
-    EXPECT_TRUE(ref::close(p.to_vector(), e, 1e-5, 1e-6)) << "step " << t + 1;
+  for (const bool fused : {true, false}) {
+    options.fused = fused;
+    const Tensor p = fg::tensor(start, fg::Device::cuda()).requires_grad_();
+    optim::Adam adam({p}, options);
+    for (std::size_t t = 0; t < grads.size(); ++t) {
+      const std::vector<float> g(grads[t].begin(), grads[t].end());
+      p.set_grad(fg::tensor(g, fg::Device::cuda()));
+      adam.step();
+      const std::vector<float> e(expected[t].begin(), expected[t].end());
+      EXPECT_TRUE(ref::close(p.to_vector(), e, 1e-5, 1e-6))
+          << "step " << t + 1 << (fused ? " (fused)" : " (unfused)");
+    }
+    EXPECT_EQ(adam.steps(), 4);
   }
-  EXPECT_EQ(adam.steps(), 4);
 }
+
+// Runs `steps` Adam steps on `params` with random gradients (set with `make_grad`, which gets
+// the parameter and a contiguous random gradient of its shape) and compares every parameter
+// with adam_ref afterwards.
+template <typename MakeGrad>
+void check_parameters(const std::vector<Tensor>& params, const optim::AdamOptions& options,
+                      int steps, MakeGrad make_grad) {
+  std::vector<std::vector<double>> start;
+  for (const Tensor& p : params) {
+    const std::vector<float> values = p.to_vector();
+    start.emplace_back(values.begin(), values.end());
+  }
+  std::vector<std::vector<std::vector<double>>> grads(params.size());  // [param][step][i]
+  optim::Adam adam(params, options);
+  std::uint64_t seed = 100;
+  for (int t = 0; t < steps; ++t) {
+    for (std::size_t i = 0; i < params.size(); ++i) {
+      const Tensor g = ref::random_cuda(params[i].shape(), seed++);
+      const std::vector<float> values = g.to_vector();
+      grads[i].emplace_back(values.begin(), values.end());
+      params[i].set_grad(make_grad(params[i], g));
+    }
+    adam.step();
+  }
+  for (std::size_t i = 0; i < params.size(); ++i) {
+    const std::vector<double> expected = adam_ref(start[i], grads[i], options).back();
+    EXPECT_TRUE(ref::close(params[i].to_vector(),
+                           std::vector<float>(expected.begin(), expected.end()), 1e-5, 1e-6))
+        << "parameter " << i << " " << fg::describe(params[i]);
+  }
+}
+
+Tensor same_grad(const Tensor& /*param*/, const Tensor& grad) { return grad; }
 
 TEST(Adam, RejectsInvalidOptions) {
   const std::vector<Tensor> params = {fg::ones({2}).requires_grad_()};
@@ -145,6 +184,63 @@ TEST(Adam, TrainsALinearRegression) {
     adam.step();
   }
   EXPECT_LT(loss_value, 0.01f * first_loss);
+}
+
+TEST(Adam, FusedHandlesManyParametersOfAwkwardSizes) {
+  SKIP_IF_NO_CUDA();
+  // More than one launch (64 tensors each), empty and size-1 tensors, and sizes around the
+  // 4096-element chunk and the float4 width.
+  std::vector<fg::Shape> shapes = {{0},    {1},    {3},    {4},    {5},      {4095},
+                                   {4096}, {4097}, {8193}, {2, 0}, {33, 65}, {7, 3, 5}};
+  for (std::int64_t i = 0; i < 70; ++i) shapes.push_back({1 + (i * 37) % 300});
+  std::vector<Tensor> params;
+  for (std::size_t i = 0; i < shapes.size(); ++i)
+    params.push_back(ref::random_cuda(shapes[i], i).requires_grad_());
+  check_parameters(params, {.lr = 0.01f}, 3, same_grad);
+}
+
+TEST(Adam, FusedAdamWHandlesManyParameters) {
+  SKIP_IF_NO_CUDA();
+  std::vector<Tensor> params;
+  for (std::int64_t i = 0; i < 80; ++i)
+    params.push_back(ref::random_cuda({1 + (i * 911) % 5000}, i).requires_grad_());
+  check_parameters(params, {.lr = 0.01f, .weight_decay = 0.1f, .decoupled_weight_decay = true}, 3,
+                   same_grad);
+}
+
+TEST(Adam, FusedTakesNonContiguousGradients) {
+  SKIP_IF_NO_CUDA();
+  const Tensor p = ref::random_cuda({5, 7}, 1).requires_grad_();
+  check_parameters({p}, {.lr = 0.01f, .weight_decay = 0.1f}, 3, [](const Tensor&, const Tensor& g) {
+    const Tensor transposed = g.t().contiguous().t();  // same values, strided
+    EXPECT_FALSE(transposed.is_contiguous());
+    return transposed;
+  });
+}
+
+TEST(Adam, FusedTakesUnalignedParameters) {
+  SKIP_IF_NO_CUDA();
+  // Contiguous views starting one float in, so the kernel can't use float4 accesses.
+  const Tensor base = ref::random_cuda({5000}, 2);
+  const Tensor p = base.slice(0, 1).detach().requires_grad_();
+  const Tensor q = base.slice(0, 1, 8).detach().requires_grad_();
+  ASSERT_TRUE(p.is_contiguous());
+  check_parameters({p, q}, {.lr = 0.01f}, 3, same_grad);
+}
+
+TEST(Adam, NonContiguousParametersFallBackToTheUnfusedStep) {
+  SKIP_IF_NO_CUDA();
+  const Tensor p = ref::random_cuda({6, 9}, 3).t().detach().requires_grad_();
+  ASSERT_FALSE(p.is_contiguous());
+  const Tensor q = ref::random_cuda({100}, 4).requires_grad_();
+  check_parameters({p, q}, {.lr = 0.01f}, 3, same_grad);
+}
+
+TEST(Adam, FusedRejectsCpuParameters) {
+  const Tensor p = fg::ones({2}).requires_grad_();
+  p.set_grad(fg::ones({2}));
+  optim::Adam adam({p}, {});
+  EXPECT_THROW(adam.step(), fg::Error);
 }
 
 }  // namespace

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <vector>
 
 #include "flashgrad/core/tensor.h"
 
@@ -51,5 +52,31 @@ void matmul(const Tensor& out, const Tensor& a, const Tensor& b, Stream stream =
 
 // out = log_softmax(a) along `dim`; `out` has the shape of `a`.
 void log_softmax(const Tensor& out, const Tensor& a, std::int64_t dim, Stream stream = nullptr);
+
+// One parameter and its state for adam_step; all four have the same shape, are contiguous and
+// don't overlap each other. `param`, `exp_avg` and `exp_avg_sq` are updated in place.
+struct AdamTensors {
+  Tensor param;
+  Tensor grad;
+  Tensor exp_avg;     // first moment m
+  Tensor exp_avg_sq;  // second moment v
+};
+
+// Hyperparameters of one Adam step (see optim/adam.h); `step` is t >= 1, for bias correction.
+struct AdamStep {
+  float lr;
+  float beta1;
+  float beta2;
+  float eps;
+  float weight_decay;
+  bool decoupled_weight_decay;
+  std::int64_t step;
+};
+
+// One fused Adam / AdamW step over every tensor set: reads p, g, m, v once and writes p, m, v
+// once, in one kernel launch per 64 tensor sets (multi-tensor apply) instead of a dozen
+// elementwise kernels per parameter. Empty tensors are skipped.
+void adam_step(const std::vector<AdamTensors>& tensors, const AdamStep& step,
+               Stream stream = nullptr);
 
 }  // namespace flashgrad::cuda::detail

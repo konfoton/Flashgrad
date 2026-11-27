@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <vector>
 
@@ -15,6 +16,10 @@ struct AdamOptions {
   float eps = 1e-8f;                    // > 0
   float weight_decay = 0.0f;            // >= 0
   bool decoupled_weight_decay = false;  // true gives AdamW
+  // One fused kernel for all parameters (src/cuda/adam.cu) instead of a dozen elementwise ops
+  // per parameter. Same math; results differ only by float rounding. Parameters that aren't
+  // contiguous always take the unfused path.
+  bool fused = true;
 };
 
 // Adam (Kingma & Ba), as in PyTorch. On step t = 1, 2, ..., for each parameter p with
@@ -36,6 +41,8 @@ class Adam : public Optimizer {
   std::int64_t steps() const { return steps_; }  // how many times step() was called
 
  private:
+  void step_unfused(std::size_t i, Tensor grad, float correction1, float correction2);
+
   AdamOptions options_;
   std::int64_t steps_ = 0;
   std::vector<Tensor> m_;  // first moments, one per parameter; undefined until used

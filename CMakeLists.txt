@@ -78,6 +78,7 @@ add_library(flashgrad
   src/core/tensor.cpp
   src/core/tensor_view.cpp
   src/cpu/ops.cpp
+  src/cuda/adam.cu
   src/cuda/caching_allocator.cpp
   src/cuda/elementwise.cu
   src/cuda/matmul.cu
